@@ -1,0 +1,13 @@
+# Local dataset inputs and runtime state
+/data/
+/.runtime/
+
+# Generated models, checkpoints, experiments, and deployment bundles
+/artifacts/
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+

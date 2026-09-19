@@ -1,0 +1,8 @@
+# Dataset configuration placeholder for the anti_drone project.
+# Fill in the local dataset path before training.
+path: /path/to/drone-single-class
+train: images/train
+val: images/val
+names:
+  0: drone
+

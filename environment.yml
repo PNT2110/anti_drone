@@ -1,0 +1,6 @@
+name: anti_drone
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+
