@@ -1,6 +1,6 @@
 # Phase 06 — Benchmark and release
 
-Trạng thái: `TODO`
+Trạng thái: `BLOCKED_PI_HARDWARE`
 
 ## Mục tiêu
 
@@ -38,24 +38,24 @@ Không benchmark khi có process train hoặc process nặng khác trên Pi.
 ```bash
 cd /path/to/anti_drone
 
-anti-drone benchmark --runtime onnx \
-  --model artifacts/deploy/<model-id>/onnx \
-  --input .runtime/replay-set \
-  --warmup 200 --frames 1000 --output artifacts/benchmarks/pi5-cpu/onnx/<run-id>
+python scripts/benchmark_phase6.py --runtime onnx \
+  --model artifacts/deploy/yolov8n/onnx/best.onnx \
+  --input .runtime/parity-set --warmup 200 --frames 1000 \
+  --output-root artifacts/benchmarks/pi5-cpu
 
-anti-drone benchmark --runtime ncnn \
-  --model artifacts/deploy/<model-id>/ncnn \
-  --input .runtime/replay-set \
-  --warmup 200 --frames 1000 --output artifacts/benchmarks/pi5-cpu/ncnn/<run-id>
+python scripts/benchmark_phase6.py --runtime ncnn \
+  --model artifacts/deploy/yolov8n/ncnn/best_ncnn_model \
+  --input .runtime/parity-set --warmup 200 --frames 1000 \
+  --output-root artifacts/benchmarks/pi5-cpu
 
-anti-drone benchmark --runtime tflite \
-  --model artifacts/deploy/<model-id>/tflite \
-  --input .runtime/replay-set \
-  --warmup 200 --frames 1000 --output artifacts/benchmarks/pi5-cpu/tflite/<run-id>
+python scripts/benchmark_phase6.py --runtime tflite \
+  --model artifacts/deploy/yolov8n/tflite/model_float32.tflite \
+  --input .runtime/parity-set --warmup 200 --frames 1000 \
+  --output-root artifacts/benchmarks/pi5-cpu
 
-anti-drone camera-benchmark --device /dev/video0 \
+PYTHONPATH=src python scripts/run_phase5.py camera --device /dev/video0 \
   --runtime <runtime> --duration-seconds 1800 \
-  --output artifacts/benchmarks/pi5-cpu/<runtime>/<run-id>
+  --model <runtime-model> --output artifacts/benchmarks/pi5-cpu/<runtime>/<run-id>
 ```
 
 ## Output bắt buộc
@@ -99,9 +99,9 @@ artifacts/benchmarks/pi5-cpu/<runtime>/<run-id>/
 
 ## Acceptance gate
 
-Release candidate chỉ được tạo khi ba runtime có kết quả đo hợp lệ, pipeline
-không crash trong sustained run và report ghi đủ điều kiện đo. Không dùng số đo
-của máy khác hoặc số lý thuyết thay cho benchmark thực tế.
+Release candidate hiện bị `BLOCKED_PI_VALIDATION`: ba benchmark đã có host
+reference nhưng chưa có Pi 5, camera và sustained 30 phút. Không dùng số host
+thay cho benchmark thực tế trên Pi.
 
 ## Dừng hoặc quay lại
 

@@ -1,6 +1,6 @@
 # Phase 07 — Retraining and maintenance
 
-Trạng thái: `TODO`
+Trạng thái: `BASELINE_FROZEN_NO_NEW_BATCH`
 
 ## Mục tiêu
 
@@ -103,3 +103,9 @@ Lưu parent dataset/version, batch checksum, label reviewer, split registry hash
 baseline checkpoint hash, candidate hash, evaluation report, export hash và
 benchmark report.
 
+## Trạng thái thực thi hiện tại
+
+Dataset v1 được giữ nguyên, chưa có batch dữ liệu mới đã review nên chưa tạo
+dataset v2 hoặc chạy retrain giả. Audit baseline được ghi tại
+`artifacts/maintenance/yolov8n/phase7_status.json`; khi có batch mới phải quay
+lại Phase 01 rồi mới đi tiếp Phase 02–06.

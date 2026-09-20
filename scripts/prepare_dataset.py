@@ -184,6 +184,27 @@ def link_or_empty(source: Path | None, destination: Path) -> None:
         destination.write_text("", encoding="utf-8")
 
 
+def normalize_single_class_label(source: Path | None, destination: Path) -> None:
+    """Write a valid single-class label without modifying the source archive."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if source is None or not source.exists():
+        destination.write_text("", encoding="utf-8")
+        return
+    normalized = []
+    for raw in source.read_text(encoding="utf-8", errors="ignore").splitlines():
+        fields = raw.split()
+        if len(fields) != 5:
+            continue
+        try:
+            values = [float(value) for value in fields[1:]]
+        except ValueError:
+            continue
+        if not all(0.0 <= value <= 1.0 for value in values):
+            continue
+        normalized.append("0 " + " ".join(fields[1:]))
+    destination.write_text("\n".join(normalized) + ("\n" if normalized else ""), encoding="utf-8")
+
+
 def write_dataset(output: Path, splits: dict[str, list[Sample]], metadata: dict) -> None:
     if output.exists():
         shutil.rmtree(output)
@@ -199,7 +220,10 @@ def write_dataset(output: Path, splits: dict[str, list[Sample]], metadata: dict)
             image_dst = output / "images" / split / name
             label_dst = output / "labels" / split / f"{Path(name).stem}.txt"
             link_or_empty(Path(sample.image), image_dst)
-            link_or_empty(Path(sample.label) if sample.label else None, label_dst)
+            if sample.source == "my_dataset":
+                normalize_single_class_label(Path(sample.label) if sample.label else None, label_dst)
+            else:
+                link_or_empty(Path(sample.label) if sample.label else None, label_dst)
             manifest.append(asdict(sample) | {"output_image": str(image_dst), "output_label": str(label_dst)})
 
     total = len(manifest)

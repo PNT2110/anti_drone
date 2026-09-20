@@ -1,6 +1,6 @@
 # Phase 05 — Raspberry Pi 5 USB camera pipeline
 
-Trạng thái: `TODO`
+Trạng thái: `BLOCKED_PI_HARDWARE`
 
 ## Mục tiêu
 
@@ -47,29 +47,26 @@ Chỉ cài runtime profile đang kiểm tra khi cần; ghi version package vào 
 ## Image replay trước camera
 
 ```bash
-anti-drone replay --runtime onnx \
-  --model artifacts/deploy/<model-id>/onnx \
-  --input .runtime/replay-set \
-  --output .runtime/pi-replay/onnx
+PYTHONPATH=src python scripts/run_phase5.py replay --runtime onnx \
+  --model artifacts/deploy/yolov8n/onnx/best.onnx \
+  --input .runtime/parity-set --output .runtime/pi-replay/onnx
 
-anti-drone replay --runtime ncnn \
-  --model artifacts/deploy/<model-id>/ncnn \
-  --input .runtime/replay-set \
-  --output .runtime/pi-replay/ncnn
+PYTHONPATH=src python scripts/run_phase5.py replay --runtime ncnn \
+  --model artifacts/deploy/yolov8n/ncnn/best_ncnn_model \
+  --input .runtime/parity-set --output .runtime/pi-replay/ncnn
 
-anti-drone replay --runtime tflite \
-  --model artifacts/deploy/<model-id>/tflite \
-  --input .runtime/replay-set \
-  --output .runtime/pi-replay/tflite
+PYTHONPATH=src python scripts/run_phase5.py replay --runtime tflite \
+  --model artifacts/deploy/yolov8n/tflite/model_float32.tflite \
+  --input .runtime/parity-set --output .runtime/pi-replay/tflite
 ```
 
 ## Chạy camera
 
 ```bash
-anti-drone camera \
+PYTHONPATH=src python scripts/run_phase5.py camera \
   --device /dev/video0 \
   --runtime onnx \
-  --model artifacts/deploy/<model-id>/onnx \
+  --model artifacts/deploy/yolov8n/onnx/best.onnx \
   --camera-width 1280 --camera-height 720 --camera-fps 30 \
   --show-overlay --log-events
 ```
@@ -112,9 +109,9 @@ Giá trị mặc định, có thể đổi trong config:
 
 ## Acceptance gate
 
-Camera chạy liên tục, inference thành công, tracking ổn định và alert state
-machine hoạt động đúng trên test sequence. Runtime lỗi phải được ghi rõ là
-`BLOCKED`, không được đánh dấu `DONE` bằng replay một frame.
+Replay, preprocessing, inference, tracking và alert state đã chạy. Camera live
+chưa đạt vì host hiện tại không có `/dev/video0`; report ghi `BLOCKED` và không
+được suy diễn thành Pi acceptance.
 
 ## Dừng hoặc quay lại
 
@@ -127,4 +124,3 @@ machine hoạt động đúng trên test sequence. Runtime lỗi phải được
 
 Lưu Pi model/RAM/OS/kernel, camera model, resolution/FPS, runtime version,
 model checksum, config checksum, thermal snapshot và command chạy.
-

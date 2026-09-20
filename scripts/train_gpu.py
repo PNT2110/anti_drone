@@ -51,7 +51,7 @@ def install_channel_dropout(model: YOLO, probability: float):
         dropouts.append(dropout)
 
         def hook(_module, _inputs, output):
-            if isinstance(output, torch.Tensor) and output.ndim == 4:
+            if _module.training and isinstance(output, torch.Tensor) and output.ndim == 4:
                 return dropout(output)
             return output
 
@@ -77,12 +77,14 @@ def train_one(args: argparse.Namespace, model_id: str) -> None:
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
 
-    model = YOLO(str(weight))
+    resume_checkpoint = args.resume_checkpoint.resolve() if args.resume_checkpoint else None
+    model_source = resume_checkpoint if resume_checkpoint else weight
+    model = YOLO(str(model_source))
     handles = install_channel_dropout(model, args.dropout)
     started = time.time()
     provenance = {
         "model_id": model_id,
-        "weights": str(weight),
+        "weights": str(model_source),
         "data": str(args.data.resolve()),
         "epochs": args.epochs,
         "imgsz": args.imgsz,
@@ -94,6 +96,7 @@ def train_one(args: argparse.Namespace, model_id: str) -> None:
         "patience": max(args.epochs + 1, 1000),
         "channel_dropout": args.dropout,
         "dropout_type": "per-sample Dropout2d feature-map channel mask",
+        "resume_checkpoint": str(resume_checkpoint) if resume_checkpoint else None,
         "python": platform.python_version(),
         "torch": torch.__version__,
         "cuda": torch.version.cuda,
@@ -104,7 +107,7 @@ def train_one(args: argparse.Namespace, model_id: str) -> None:
     print(json.dumps(provenance, indent=2), flush=True)
 
     try:
-        model.train(
+        train_kwargs = dict(
             data=str(args.data.resolve()),
             epochs=args.epochs,
             imgsz=args.imgsz,
@@ -117,17 +120,22 @@ def train_one(args: argparse.Namespace, model_id: str) -> None:
             cache=False,
             patience=max(args.epochs + 1, 1000),
             pretrained=True,
-            project=str(project),
+            project=str(project.resolve()),
             name=run_name,
             exist_ok=False,
             plots=True,
             verbose=True,
         )
+        if resume_checkpoint:
+            # Ultralytics restores optimizer/scaler/epoch from last.pt and uses
+            # the checkpoint's existing run directory when resume=True.
+            train_kwargs["resume"] = True
+        model.train(**train_kwargs)
     finally:
         for handle in handles:
             handle.remove()
         provenance["finished_at_unix"] = time.time()
-        run_dir = project / run_name
+        run_dir = Path(getattr(getattr(model, "trainer", None), "save_dir", project.resolve() / run_name))
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / "anti_drone_provenance.json").write_text(json.dumps(provenance, indent=2), encoding="utf-8")
 
@@ -144,11 +152,22 @@ def main() -> None:
     parser.add_argument("--device", default="0")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--dropout", type=float, default=0.10)
+    parser.add_argument(
+        "--resume-checkpoint",
+        type=Path,
+        default=None,
+        help="Resume one model from a YOLO last.pt checkpoint; use with a single --models entry.",
+    )
     args = parser.parse_args()
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA GPU is required for Phase 2 training")
     if not args.data.exists():
         raise FileNotFoundError(args.data)
+    if args.resume_checkpoint:
+        if len(args.models) != 1:
+            raise ValueError("--resume-checkpoint requires exactly one model in --models")
+        if not args.resume_checkpoint.exists():
+            raise FileNotFoundError(args.resume_checkpoint)
     for model_id in args.models:
         print(f"===== START {model_id} =====", flush=True)
         train_one(args, model_id)

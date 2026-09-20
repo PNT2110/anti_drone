@@ -36,3 +36,21 @@ runtime manifests, checkpoints and benchmark output remain local under
 
 The deployment bundle is kept directly under the model directory and has one
 profile per CPU runtime.
+
+## Current Phase 4–7 status
+
+The locked Phase 3 winner is `yolov8n`. Phase 4 export and parity are complete
+for ONNX Runtime, NCNN and TFLite. Replay validation also passes for all three
+profiles. The host reference benchmark used 1,000 frames after 200 warm-up
+frames, but those numbers are not Pi 5 measurements.
+
+| Phase | Status | Evidence |
+|---|---|---|
+| 04 export/parity | `DONE` | [`artifacts/deploy/yolov8n/`](artifacts/deploy/yolov8n/) |
+| 05 replay | `DONE`; camera gate pending | [`PI5_HANDOFF.md`](docs/PI5_HANDOFF.md) |
+| 06 benchmark/release | Pi gate pending | [`RELEASE_CANDIDATE.md`](artifacts/releases/yolov8n/RELEASE_CANDIDATE.md) |
+| 07 maintenance | baseline frozen | [`phase7_status.json`](artifacts/maintenance/yolov8n/phase7_status.json) |
+
+The verified Pi handoff is [anti-drone-yolov8n-pi5.tar.gz](artifacts/releases/yolov8n/anti-drone-yolov8n-pi5.tar.gz).
+Run the camera and sustained benchmark gate on the actual Pi 5 before promoting
+the release. The independent audit is [VERIFICATION.json](artifacts/releases/yolov8n/VERIFICATION.json).

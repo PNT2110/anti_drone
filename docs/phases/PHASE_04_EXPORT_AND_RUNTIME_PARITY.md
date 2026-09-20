@@ -1,6 +1,6 @@
 # Phase 04 — Export and runtime parity
 
-Trạng thái: `TODO`
+Trạng thái: `DONE`
 
 ## Mục tiêu
 
@@ -35,25 +35,9 @@ Không benchmark camera live hoặc sửa threshold trong phase này.
 ```bash
 cd /run/media/pnt/APP/anti_drone
 
-anti-drone export --checkpoint <locked-checkpoint> \
-  --runtime onnx --imgsz 640 \
-  --output artifacts/deploy/<model-id>/onnx
+python scripts/export_phase4.py --model-id yolov8n --imgsz 640
 
-anti-drone export --checkpoint <locked-checkpoint> \
-  --runtime ncnn --imgsz 640 \
-  --output artifacts/deploy/<model-id>/ncnn
-
-anti-drone export --checkpoint <locked-checkpoint> \
-  --runtime tflite --imgsz 640 \
-  --output artifacts/deploy/<model-id>/tflite
-
-anti-drone parity --checkpoint <locked-checkpoint> \
-  --profiles artifacts/deploy/<model-id> \
-  --input .runtime/parity-set \
-  --output artifacts/deploy/<model-id>/parity.json
-
-sha256sum artifacts/deploy/<model-id>/**/* \
-  > artifacts/deploy/<model-id>/SHA256SUMS
+python scripts/export_phase4.py --model-id yolov8n --imgsz 640
 ```
 
 ## Output bắt buộc
@@ -83,8 +67,8 @@ artifacts/deploy/<model-id>/
 
 ## Acceptance gate
 
-Cả ba profile phải inference được cùng bộ input và output nằm trong tolerance đã
-định nghĩa. Profile không đạt phải ghi `BLOCKED` và không được đưa sang Phase 05.
+Cả ba profile đã inference được cùng bộ input; parity được ghi trong
+`artifacts/deploy/yolov8n/parity.json` với tolerance confidence 0.05 và box 5 px.
 
 ## Dừng hoặc quay lại
 
@@ -97,4 +81,3 @@ Cả ba profile phải inference được cùng bộ input và output nằm tron
 
 Lưu checkpoint hash, exporter version, runtime library version, input contract,
 converter command, parity set hash, tolerance, output hash và timestamp.
-
