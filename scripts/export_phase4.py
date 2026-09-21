@@ -157,11 +157,11 @@ def export_profile(checkpoint: Path, runtime: str, target: Path, imgsz: int) -> 
     return destination
 
 
-def prediction_signature(model_path: Path, images: list[Path], confidence: float) -> list[list[float]]:
+def prediction_signature(model_path: Path, images: list[Path], confidence: float, imgsz: int) -> list[list[float]]:
     model = YOLO(str(model_path))
     signature: list[list[float]] = []
     for image in images:
-        result = model.predict(source=str(image), imgsz=640, conf=confidence, iou=0.70, device="cpu", verbose=False)[0]
+        result = model.predict(source=str(image), imgsz=imgsz, conf=confidence, iou=0.70, device="cpu", verbose=False)[0]
         boxes = result.boxes
         if boxes is None or len(boxes) == 0:
             continue
@@ -174,14 +174,14 @@ def prediction_signature(model_path: Path, images: list[Path], confidence: float
     return signature
 
 
-def parity(checkpoint: Path, profiles: dict[str, Path], images: list[Path], confidence: float) -> dict:
+def parity(checkpoint: Path, profiles: dict[str, Path], images: list[Path], confidence: float, imgsz: int) -> dict:
     result = {"status": "DONE", "profiles": {}, "tolerance": {"max_abs_confidence": 0.05, "max_abs_box_pixels": 5.0, "class_exact": True}, "images": [str(item) for item in images]}
-    reference = prediction_signature(checkpoint, images, confidence)
+    reference = prediction_signature(checkpoint, images, confidence, imgsz)
     for runtime, model_path in profiles.items():
         started = time.time()
         item = {"model": str(model_path), "status": "DONE", "started_at": started}
         try:
-            candidate = prediction_signature(model_path, images, confidence)
+            candidate = prediction_signature(model_path, images, confidence, imgsz)
             item["reference_detections"] = len(reference)
             item["candidate_detections"] = len(candidate)
             item["class_exact"] = [row[1] for row in candidate] == [row[1] for row in reference]
@@ -230,7 +230,7 @@ def main() -> None:
             errors[runtime] = f"{type(exc).__name__}: {exc}"
             (target / "EXPORT_BLOCKED.txt").parent.mkdir(parents=True, exist_ok=True)
             (target / "EXPORT_BLOCKED.txt").write_text(errors[runtime] + "\n", encoding="utf-8")
-    parity_result = parity(checkpoint, profiles, images, args.confidence) if profiles else {"status": "BLOCKED", "profiles": {}}
+    parity_result = parity(checkpoint, profiles, images, args.confidence, args.imgsz) if profiles else {"status": "BLOCKED", "profiles": {}}
     for runtime, error in errors.items():
         parity_result.setdefault("profiles", {})[runtime] = {"status": "BLOCKED", "error": error}
     if errors:
