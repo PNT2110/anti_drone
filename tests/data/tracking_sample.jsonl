@@ -1,0 +1,5 @@
+{"frame_id": 1, "timestamp": 0.0, "detections": [{"bbox": [10, 10, 30, 30], "confidence": 0.80}]}
+{"frame_id": 2, "timestamp": 0.1, "detections": [{"bbox": [11, 10, 31, 30], "confidence": 0.70}]}
+{"frame_id": 3, "timestamp": 0.2, "detections": [{"bbox": [12, 10, 32, 30], "confidence": 0.15}]}
+{"frame_id": 4, "timestamp": 0.3, "detections": []}
+{"frame_id": 5, "timestamp": 0.4, "detections": [{"bbox": [14, 10, 34, 30], "confidence": 0.75}]}

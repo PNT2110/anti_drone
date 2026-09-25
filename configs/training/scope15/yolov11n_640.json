@@ -1,0 +1,29 @@
+{
+  "amp": true,
+  "batch": 16,
+  "candidate_status": "HOLDOUT_PRESERVING_V3_CANDIDATE",
+  "data": "/run/media/pnt/APP/anti_drone/data/processed/drone-single-class-v3-candidate/data.yaml",
+  "dataset_manifest_sha256": "b5bc4cdf34b7e8283f4c1a6dd342f816f3ff1ad10f5fd3876baa413e35a55ffc",
+  "dataset_split_registry_sha256": "57ffb56effd35ad65aad9d163e586ebd8c9f9f1f19c93a86d5fd7619d72cff3d",
+  "device": "0",
+  "epochs": 100,
+  "excluded_quarantine": {
+    "groups": 4172,
+    "samples": 6505
+  },
+  "expected_project": "/run/media/pnt/APP/anti_drone/artifacts/experiments/scope15-v3/imgsz-640-s42/drone-single-class/yolov11n",
+  "imgsz": 640,
+  "model_id": "yolov11n",
+  "output_root": "/run/media/pnt/APP/anti_drone/artifacts/experiments/scope15-v3/imgsz-640-s42",
+  "pretrained": true,
+  "resume_policy": "resume only from this configuration's own last.pt; never cross-model/cross-size resume",
+  "seed": 42,
+  "session_disjoint": "UNVERIFIED",
+  "status": "PREPARED_NOT_TRAINED",
+  "test_policy": "V3 test is locked; validation only for checkpoint/parameter selection",
+  "training_command_template": "python scripts/train_gpu.py --data /run/media/pnt/APP/anti_drone/data/processed/drone-single-class-v3-candidate/data.yaml --models yolov11n --imgsz 640 --seed 42 --batch 16 --device 0 --output-root /run/media/pnt/APP/anti_drone/artifacts/experiments/scope15-v3/imgsz-640-s42",
+  "training_not_run": true,
+  "weight_path": "/home/pnt/Desktop/antidrone/model/yolo11n.pt",
+  "weight_sha256": "0ebbc80d4a7680d14987a577cd21342b65ecfd94632bd9a8da63ae6417644ee1",
+  "workers": 4
+}

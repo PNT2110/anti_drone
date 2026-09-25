@@ -16,23 +16,10 @@ from typing import Any
 import cv2
 import numpy as np
 
-
-@dataclass
-class Detection:
-    box: np.ndarray
-    confidence: float
-    class_id: int = 0
-
-
-@dataclass
-class Track:
-    track_id: int
-    box: np.ndarray
-    confidence: float
-    hits: int = 1
-    missed: int = 0
-    last_frame: int = 0
-
+from .alerts import AlertEvent, TemporalAlert
+from .tracking import ByteTrack, ByteTrackConfig, ByteTrackLegacy
+from .tracking.association import box_iou, valid_box, xyxy_to_xywh
+from .tracking.types import Detection, Track, TrackState
 
 def letterbox(image: np.ndarray, size: int = 640, color: tuple[int, int, int] = (114, 114, 114)) -> tuple[np.ndarray, float, tuple[float, float]]:
     height, width = image.shape[:2]
@@ -55,19 +42,7 @@ def preprocess(image: np.ndarray, size: int = 640) -> tuple[np.ndarray, float, t
     return tensor[None, ...], scale, pad
 
 
-def box_iou(a: np.ndarray, b: np.ndarray) -> float:
-    x1 = max(float(a[0]), float(b[0]))
-    y1 = max(float(a[1]), float(b[1]))
-    x2 = min(float(a[2]), float(b[2]))
-    y2 = min(float(a[3]), float(b[3]))
-    intersection = max(0.0, x2 - x1) * max(0.0, y2 - y1)
-    area_a = max(0.0, float(a[2] - a[0])) * max(0.0, float(a[3] - a[1]))
-    area_b = max(0.0, float(b[2] - b[0])) * max(0.0, float(b[3] - b[1]))
-    union = area_a + area_b - intersection
-    return intersection / union if union else 0.0
-
-
-def decode_yolo_output(raw: Any, original_shape: tuple[int, int], scale: float, pad: tuple[float, float], confidence: float = 0.25, nms_iou: float = 0.70) -> list[Detection]:
+def decode_yolo_output(raw: Any, original_shape: tuple[int, int], scale: float, pad: tuple[float, float], confidence: float = 0.10, nms_iou: float = 0.70) -> list[Detection]:
     """Decode the raw one-class YOLO export and restore original-image boxes."""
     output = np.asarray(raw)
     output = np.squeeze(output)
@@ -85,7 +60,7 @@ def decode_yolo_output(raw: Any, original_shape: tuple[int, int], scale: float, 
     class_scores = output[:, 4:].astype(np.float32)
     class_ids = np.argmax(class_scores, axis=1)
     scores = class_scores[np.arange(len(class_scores)), class_ids]
-    keep = scores >= confidence
+    keep = (scores >= confidence) & np.isfinite(scores) & np.isfinite(boxes_xywh).all(axis=1)
     boxes_xywh, scores, class_ids = boxes_xywh[keep], scores[keep], class_ids[keep]
     if not len(scores):
         return []
@@ -97,7 +72,12 @@ def decode_yolo_output(raw: Any, original_shape: tuple[int, int], scale: float, 
             boxes_xywh[:, 1] + boxes_xywh[:, 3] / 2,
         )
     )
-    selected = cv2.dnn.NMSBoxes(xyxy.tolist(), scores.tolist(), float(confidence), float(nms_iou))
+    valid = np.array([valid_box(box) for box in xyxy], dtype=bool)
+    boxes_xywh, xyxy, scores, class_ids = boxes_xywh[valid], xyxy[valid], scores[valid], class_ids[valid]
+    if not len(scores):
+        return []
+    # OpenCV NMSBoxes expects [x, y, width, height], not [x1, y1, x2, y2].
+    selected = cv2.dnn.NMSBoxes([xyxy_to_xywh(box) for box in xyxy], scores.tolist(), float(confidence), float(nms_iou))
     indices = np.asarray(selected).reshape(-1).astype(int) if len(selected) else np.empty(0, dtype=int)
     height, width = original_shape
     pad_x, pad_y = pad
@@ -108,7 +88,8 @@ def decode_yolo_output(raw: Any, original_shape: tuple[int, int], scale: float, 
         box[[1, 3]] = (box[[1, 3]] - pad_y) / scale
         box[[0, 2]] = np.clip(box[[0, 2]], 0, width)
         box[[1, 3]] = np.clip(box[[1, 3]], 0, height)
-        detections.append(Detection(box=box, confidence=float(scores[index]), class_id=int(class_ids[index])))
+        if valid_box(box):
+            detections.append(Detection(box=box, confidence=float(scores[index]), class_id=int(class_ids[index])))
     return detections
 
 
@@ -170,7 +151,7 @@ class LiteRTEngine:
             value = value.transpose(0, 2, 3, 1)
         if self.input["dtype"] != np.float32:
             scale, zero = self.input["quantization"]
-            value = np.round(tensor / scale + zero).astype(self.input["dtype"])
+            value = np.round(value / scale + zero).astype(self.input["dtype"])
         self.interpreter.set_tensor(self.input["index"], value)
         self.interpreter.invoke()
         return [self.interpreter.get_tensor(item["index"]) for item in self.outputs]
@@ -186,77 +167,79 @@ def make_engine(runtime: str, model: Path) -> Any:
     raise ValueError(f"Unknown runtime: {runtime}")
 
 
-class ByteTrackLite:
-    """Bounded IoU tracker with ByteTrack-style high/low confidence passes."""
-
-    def __init__(self, high_threshold: float = 0.25, low_threshold: float = 0.10, match_iou: float = 0.30, max_lost: int = 15):
-        self.high_threshold = high_threshold
-        self.low_threshold = low_threshold
-        self.match_iou = match_iou
-        self.max_lost = max_lost
-        self.next_id = 1
-        self.tracks: dict[int, Track] = {}
-
-    def update(self, detections: list[Detection], frame_id: int) -> list[Track]:
-        candidates = [d for d in detections if d.confidence >= self.low_threshold]
-        unmatched = set(range(len(candidates)))
-        for track in list(self.tracks.values()):
-            best_index, best_iou = -1, 0.0
-            for index in unmatched:
-                overlap = box_iou(track.box, candidates[index].box)
-                if overlap > best_iou:
-                    best_index, best_iou = index, overlap
-            if best_index >= 0 and best_iou >= self.match_iou:
-                detection = candidates[best_index]
-                track.box = detection.box
-                track.confidence = detection.confidence
-                track.hits += 1
-                track.missed = 0
-                track.last_frame = frame_id
-                unmatched.remove(best_index)
-            else:
-                track.missed += 1
-        for index in unmatched:
-            detection = candidates[index]
-            if detection.confidence >= self.high_threshold:
-                self.tracks[self.next_id] = Track(self.next_id, detection.box, detection.confidence, last_frame=frame_id)
-                self.next_id += 1
-        self.tracks = {key: value for key, value in self.tracks.items() if value.missed <= self.max_lost}
-        return list(self.tracks.values())
+class ByteTrackLite(ByteTrackLegacy):
+    """Backward-compatible name for the preserved legacy implementation."""
 
 
 class AlertState:
+    """Backward-compatible frame API that counts observations only."""
+
     def __init__(self, confirm_hits: int = 3, confirm_window: int = 5, cooldown_frames: int = 30):
         self.confirm_hits = confirm_hits
         self.confirm_window = confirm_window
         self.cooldown_frames = cooldown_frames
         self.history: dict[int, list[int]] = {}
-        self.last_alert = -10**9
+        self.last_alert: dict[int, int] = {}
+        self._seen: set[tuple[int, int]] = set()
 
     def update(self, tracks: list[Track], frame_id: int) -> list[Track]:
         alerts: list[Track] = []
         for track in tracks:
+            if not track.matched_this_frame or (track.track_id, frame_id) in self._seen:
+                continue
+            self._seen.add((track.track_id, frame_id))
             history = [frame for frame in self.history.get(track.track_id, []) if frame >= frame_id - self.confirm_window + 1]
             history.append(frame_id)
             self.history[track.track_id] = history
-            if len(history) >= self.confirm_hits and frame_id - self.last_alert >= self.cooldown_frames:
+            if len(history) >= self.confirm_hits and frame_id - self.last_alert.get(track.track_id, -10**9) >= self.cooldown_frames:
                 alerts.append(track)
-                self.last_alert = frame_id
+                self.last_alert[track.track_id] = frame_id
         self.history = {key: value for key, value in self.history.items() if value and frame_id - value[-1] <= self.confirm_window * 2}
         return alerts
 
 
 class DetectorPipeline:
-    def __init__(self, runtime: str, model: Path, imgsz: int = 640, confidence: float = 0.25, nms_iou: float = 0.70):
+    def __init__(self, runtime: str, model: Path, imgsz: int = 640, confidence: float = 0.10, nms_iou: float = 0.70, tracker: str = "bytetrack_motion_adaptive", tracker_config: ByteTrackConfig | None = None, alert_config: dict[str, Any] | None = None):
         self.engine = make_engine(runtime, model)
         self.imgsz = imgsz
         self.confidence = confidence
         self.nms_iou = nms_iou
-        self.tracker = ByteTrackLite(high_threshold=confidence)
-        self.alerts = AlertState()
+        config = tracker_config or ByteTrackConfig(detector_confidence_floor=confidence)
+        if tracker == "bytetrack_legacy":
+            self.tracker = ByteTrackLegacy(config.track_high_thresh, config.track_low_thresh, config.match_iou)
+        elif tracker == "bytetrack_motion":
+            self.tracker = ByteTrack(config, mode="motion")
+        elif tracker == "bytetrack_motion_adaptive":
+            self.tracker = ByteTrack(config, mode="motion_adaptive")
+        else:
+            raise ValueError(f"Unknown tracker: {tracker}")
+        alert_config = alert_config or {}
+        alert_config.setdefault("high_confidence_threshold", config.track_high_thresh)
+        self.alerts = TemporalAlert(**alert_config)
+        self.last_alert_events: list[AlertEvent] = []
+        self.tracker_name = tracker
+        self.max_gap_before_reset_seconds = config.max_gap_before_reset_seconds
+        self._last_timestamp: float | None = None
+        self._last_frame_shape: tuple[int, int] | None = None
 
-    def process(self, frame: np.ndarray, frame_id: int) -> tuple[np.ndarray, list[Track], list[Track], float]:
+    def reset(self) -> None:
+        """Start a new camera/video session without inheriting alert history."""
+
+        self.tracker.reset()
+        self.alerts.reset()
+        self.last_alert_events = []
+        self._last_timestamp = None
+        self._last_frame_shape = None
+
+    def process(self, frame: np.ndarray, frame_id: int, timestamp: float | None = None, source_frame_id: int | None = None) -> tuple[np.ndarray, list[Track], list[Track], float]:
         started = time.perf_counter()
+        timestamp = float(frame_id) if timestamp is None else float(timestamp)
+        source_frame_id = frame_id if source_frame_id is None else source_frame_id
+        frame_shape = tuple(frame.shape[:2])
+        if self._last_frame_shape is not None and frame_shape != self._last_frame_shape:
+            self.reset()
+        if self._last_timestamp is not None and timestamp - self._last_timestamp > self.max_gap_before_reset_seconds:
+            self.reset()
         tensor, scale, pad = preprocess(frame, self.imgsz)
         raw = self.engine.infer(tensor)
         if getattr(self.engine, "normalized_output", False):
@@ -267,14 +250,20 @@ class DetectorPipeline:
                 normalized[..., :4] *= self.imgsz
             raw[0] = normalized
         detections = decode_yolo_output(raw[0], frame.shape[:2], scale, pad, self.confidence, self.nms_iou)
-        tracks = self.tracker.update(detections, frame_id)
-        alerts = self.alerts.update(tracks, frame_id)
+        tracks = self.tracker.update(detections, timestamp=timestamp, frame_id=frame_id, source_frame_id=source_frame_id)
+        alerts, self.last_alert_events = self.alerts.update(tracks, timestamp)
+        self._last_timestamp = timestamp
+        self._last_frame_shape = frame_shape
         latency_ms = (time.perf_counter() - started) * 1000
         output = frame.copy()
         for track in tracks:
-            x1, y1, x2, y2 = map(int, track.box)
+            box = np.asarray(track.box, dtype=np.float32).copy()
+            box[[0, 2]] = np.clip(box[[0, 2]], 0, frame.shape[1])
+            box[[1, 3]] = np.clip(box[[1, 3]], 0, frame.shape[0])
+            x1, y1, x2, y2 = map(int, box)
             color = (0, 0, 255) if track in alerts else (0, 220, 0)
             cv2.rectangle(output, (x1, y1), (x2, y2), color, 2)
-            cv2.putText(output, f"drone id={track.track_id} {track.confidence:.2f}", (x1, max(20, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+            observed = "OBSERVED" if track.is_observed else "PREDICTED"
+            cv2.putText(output, f"drone id={track.track_id} {track.confidence:.2f} {track.state.value} {observed}", (x1, max(20, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
         cv2.putText(output, f"latency={latency_ms:.1f}ms tracks={len(tracks)}", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 0), 2)
         return output, tracks, alerts, latency_ms

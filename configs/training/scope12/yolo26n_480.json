@@ -1,0 +1,27 @@
+{
+  "amp": true,
+  "batch": 16,
+  "data": "/run/media/pnt/APP/anti_drone/data/processed/drone-single-class-v2-executable/data.yaml",
+  "dataset_manifest_sha256": "9605532a2b24566b691554125074c37f198c452bce343883b2a6720847299aa1",
+  "device": "0",
+  "epochs": 100,
+  "excluded_quarantine": {
+    "groups": 4172,
+    "samples": 6505
+  },
+  "expected_project": "/run/media/pnt/APP/anti_drone/artifacts/experiments/scope12-v2/imgsz-480-s42/drone-single-class/yolo26n",
+  "imgsz": 480,
+  "model_id": "yolo26n",
+  "output_root": "/run/media/pnt/APP/anti_drone/artifacts/experiments/scope12-v2/imgsz-480-s42",
+  "pretrained": true,
+  "resume_policy": "resume only from this configuration's own last.pt; never cross-model/cross-size resume",
+  "seed": 42,
+  "split_registry_sha256": "5819f6df78156561f3907e0eac05186dd5d77fe556699c74bad0ee5d40f51ed9",
+  "status": "PREPARED_NOT_TRAINED",
+  "test_policy": "test is held out; validation only for checkpoint/parameter selection",
+  "training_command_template": "python scripts/train_gpu.py --data /run/media/pnt/APP/anti_drone/data/processed/drone-single-class-v2-executable/data.yaml --models yolo26n --imgsz 480 --seed 42 --batch 16 --device 0 --output-root artifacts/experiments/scope12-v2/imgsz-480-s42",
+  "training_not_run": true,
+  "weight_path": "/home/pnt/Desktop/antidrone/model/yolo26n.pt",
+  "weight_sha256": "9b09cc8bf347f0fc8a5f7657480587f25db09b34bf33b0652110fb03a8ad4fef",
+  "workers": 4
+}

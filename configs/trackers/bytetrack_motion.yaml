@@ -1,0 +1,20 @@
+name: bytetrack_motion
+description: Two-stage high/low association with fixed IoU plus Kalman gating.
+detector_confidence_floor: 0.10
+track_low_thresh: 0.10
+track_high_thresh: 0.25
+new_track_thresh: 0.35
+match_iou: 0.30
+adaptive_center_gate: 2.50
+adaptive_mahalanobis_gate: 25.0
+process_noise: 1.0
+measurement_noise: 4.0
+min_confirmed_observations: 2
+max_lost_seconds: 0.60
+max_gap_before_reset_seconds: 1.00
+alert:
+  min_observations: 3
+  min_high_confidence_observations: 2
+  confirmation_window_seconds: 0.60
+  cooldown_seconds: 2.0
+  cooldown_scope: per_track

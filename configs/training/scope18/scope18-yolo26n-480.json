@@ -1,0 +1,39 @@
+{
+  "amp": true,
+  "augmentation": "Ultralytics default train augmentations as invoked by existing scripts/train_gpu.py",
+  "batch_fallback_policy": [
+    16,
+    8,
+    4
+  ],
+  "batch_start": 16,
+  "cache": false,
+  "channel_dropout": {
+    "probability": 0.1,
+    "type": "training-only Dropout2d feature-map hook; Detect head untouched"
+  },
+  "data": "/run/media/pnt/APP/anti_drone/data/processed/drone-single-class-v3-labelrepair-candidate/data.yaml",
+  "dataset_manifest_sha256": "bf814c1899d0ed006ac6f27bec465bdb1e32e5bdd3962983e740345991076c45",
+  "dataset_split_registry_sha256": "c922808e726e378c5a7c10273523b8a4e2cd3a134aff6b45973f70ab1703f3b1",
+  "deterministic": true,
+  "device": "0",
+  "epochs": 100,
+  "imgsz": 480,
+  "model_id": "yolo26n",
+  "optimizer": "auto (Ultralytics default)",
+  "output_root": "/run/media/pnt/APP/anti_drone/artifacts/experiments/scope18-v3-labelrepair",
+  "patience": 1000,
+  "repair_audit_sha256": "bb17d508aaae28e523734a33852e53fb3c8f2cb31078ab03c24d47bf81ddd914",
+  "resume_policy": "only last.pt from this exact run_id/model/imgsz/dataset/seed/batch",
+  "run_directory": "/run/media/pnt/APP/anti_drone/artifacts/experiments/scope18-v3-labelrepair/scope18-yolo26n-480",
+  "run_id": "scope18-yolo26n-480",
+  "seed": 42,
+  "source_mapping_reference": ".runtime/scope13/rgbt_archive_mapping.csv",
+  "starting_weight_path": "/home/pnt/Desktop/antidrone/model/yolo26n.pt",
+  "starting_weight_sha256": "9b09cc8bf347f0fc8a5f7657480587f25db09b34bf33b0652110fb03a8ad4fef",
+  "status": "PREPARED_NOT_STARTED",
+  "test_policy": "locked; final test belongs to a later frozen-evaluation scope",
+  "training_not_run": true,
+  "validation_policy": "V3 val only; no V3 test read for selection",
+  "workers": 4
+}
