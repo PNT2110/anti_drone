@@ -1,0 +1,337 @@
+                         ĐẶC TẢ KỸ THUẬT
+                     Hệ thống camera tự động bám drone
+                       Raspberry Pi 5 + AI HAT+ 26 TOPS
+
+                       Phiên bản triển khai: main.py hiện tại
+
+                                  27 tháng 9 năm 2026
+
+
+     Mục đích. Tài liệu này mô tả phần cứng, mô hình AI, pipeline phát hiện, tracking
+     một drone, điều khiển pan–tilt, giao diện web và các giới hạn của bản triển khai
+     trong thư mục pan_tilt_tracker. Đây là đặc tả của đường chạy main.py; các
+     chương trình PID và tracker cũ đã được loại bỏ khỏi dự án.
+
+
+Mục lục
+1 Phạm vi và mục tiêu                                                                          2
+
+2 Cấu hình hệ thống                                                                            2
+  2.1 Phần cứng . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .    2
+  2.2 Các file runtime . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   2
+
+3 Kiến trúc xử lý                                                                              3
+
+4 Mô hình AI và phát hiện drone                                                                3
+  4.1 Nhánh Hailo-8 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .    3
+  4.2 Fallback CPU . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .     4
+
+5 Thuật toán tracking và ID                                                                    4
+  5.1 KalmanTracker . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .      4
+  5.2 DroneLockon . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .      4
+
+6 Điều khiển pan–tilt                                                                          4
+  6.1 Sai số ảnh . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   4
+  6.2 StableTrackingController . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .     5
+
+7 Servo và PWM                                                                                 5
+
+8 Web, HDMI và trạng thái                                                                      6
+
+9 Khởi động, dừng và bảo vệ                                                                    6
+
+10 Triển khai                                                                                  6
+
+11 Tiêu chí nghiệm thu và giới hạn                                                             6
+AEGIS Tactical – Drone Tracker                                              SPEC v1.0
+
+
+1     Phạm vi và mục tiêu
+Hệ thống nhận ảnh từ Pi Camera Module V3, phát hiện drone bằng mô hình một lớp, chọn
+một mục tiêu để theo dõi, rồi quay cụm camera hai trục sao cho tâm bounding box tiến về
+tâm ảnh. Ảnh đã chú thích được phát qua dashboard Flask và, khi môi trường desktop cho
+phép, hiển thị trực tiếp trên HDMI của Pi.
+   Các mục tiêu thiết kế của bản hiện tại:
+
+ Bám nhanh khi drone di chuyển trong ảnh nhưng giảm vọt lố quanh tâm.
+
+ Giữ tracking ổn định khi detector dao động vài pixel.
+
+ Cấp một track ID logic và phục hồi ID sau mất detection ngắn nếu fingerprint ngoại
+  hình còn tương đồng.
+
+ Bỏ lệnh chạy theo dự đoán khi mất dấu để camera không tự trôi.
+
+ Chạy Hailo-8 trước, chuyển sang best.pt trên CPU nếu HailoRT không khởi tạo được.
+
+
+2     Cấu hình hệ thống
+2.1    Phần cứng
+
+    Thành phần                Đặc tả triển khai
+    Raspberry Pi              Pi 5, hệ điều hành Linux, Python 3
+    NPU                       Raspberry Pi AI HAT+; Hailo-8, công bố 26 TOPS
+    Camera                    Pi Camera Module V3 qua CSI, ảnh yêu cầu 1280 × 720
+    Pan                       Servo MG90S/MG996R, GPIO BCM 12, chân vật lý 32
+    Tilt                      Servo MG90S/MG996R, GPIO BCM 13, chân vật lý 33
+    PWM                       50 Hz, chu kỳ 20 ms; ưu tiên Linux hardware PWM,
+                              fallback LGPIO
+    Nguồn servo               Nguồn 5 V riêng, tối thiểu 3 A; nối chung GND với Pi
+
+    Servo không có encoder. Các góc hiển thị trên dashboard là trạng thái phần mềm được
+nội suy từ lệnh PWM, không phải góc cơ khí đo trực tiếp.
+
+2.2    Các file runtime
+
+    File                         Vai trò
+    main.py                    Entry point: camera, Hailo/CPU, decoder, tracker,
+                               PID, web, HDMI.
+    servo_controller.py        Ánh xạ góc sang xung và vòng làm mượt servo 50 Hz.
+    best.hef                   Mô hình cho nhánh Hailo-8.
+    best.pt                    Mô hình dự phòng cho nhánh Ultralytics trên CPU.
+    pid_config_tracking_v4.jsonKhông bắt buộc; ghi đè PID mặc định nếu tồn tại.
+    run_drone_tracker.sh       Chọn Python trong virtualenv và chạy main.py.
+
+
+
+                                           2
+AEGIS Tactical – Drone Tracker                                                        SPEC v1.0
+
+
+3     Kiến trúc xử lý
+Hệ thống dùng các worker daemon và queue có maxsize=1. Queue chỉ giữ frame mới nhất để
+giảm độ trễ khi camera nhanh hơn tốc độ inference.
+
+                              Camera → q_raw → Tiền xử lý
+                        → Hailo-8/CPU inference → Decoder + NMS
+                          → q_data → DroneLockon + Kalman
+                        → StableTrackingController → Servo PWM
+                                       → Camera
+
+             q_stream → Flask MJPEG dashboard;            q_local → HDMI preview
+
+
+    Worker                     Đầu vào                  Đầu ra/chức năng
+    T-Camera                   Camera                   Frame BGR + timestamp monotonic
+                                                        vào q_raw.
+    T-AI                       q_raw                    Detections, FPS EMA, frame đã xử
+                                                        lý vào q_data.
+    T-PID                      q_data                   ID, sai số, lệnh delta pan/tilt, frame
+                                                        annotate.
+    T-Web                      State/stream             API PID, thống kê và MJPEG dash-
+                                                        board.
+    T-HDMI                     q_local                  Cửa sổ OpenCV khi có DIS-
+                                                        PLAY/WAYLAND.
+
+
+4     Mô hình AI và phát hiện drone
+Mô hình của dự án được định danh là YOLO26n, huấn luyện cho một lớp drone và biên
+dịch sang best.hef để chạy trên Hailo-8. Tên model ghi trong spec mô tả nguồn của file;
+cấu trúc tensor thực tế vẫn phải khớp với decoder trong main.py.
+
+4.1    Nhánh Hailo-8
+best.hef được nạp qua hailo_platform. Frame được letterbox về INFER_SIZE = 640, đổi
+BGR sang RGB đúng một lần, thêm batch dimension và đưa vào pipeline.infer(). Decoder
+hỗ trợ hai dạng output:
+
+1. output end-to-end dạng các dòng [x1 , y1 , x2 , y2 , score, class];
+
+2. output YOLO DFL gồm ba stride 8, 16, 32 với 4 × 16 bin hoặc 4 khoảng cách cạnh.
+
+   Các khung được đưa ngược từ ảnh 640 về kích thước camera. NMS tự viết dùng
+IOU_THRESHOLD = 0.45. Một detection được xem là đủ mạnh cho mục tiêu khi conf ≥
+CONF_THRESHOLD = 0.20; ngưỡng sàn 0.10 chỉ phục vụ việc nối một track đã tồn tại.
+
+
+
+
+                                                 3
+AEGIS Tactical – Drone Tracker                                                   SPEC v1.0
+
+
+4.2     Fallback CPU
+Nếu khởi tạo Hailo hoặc inference ném exception, worker AI nạp best.pt bằng Ultralytics và
+gọi model.predict(imgsz=640, conf=0.10, iou=0.45). Hai nhánh đưa kết quả về cùng
+schema:
+{
+      "cx": ..., "cy": ..., "w": ..., "h": ...,
+      "conf": ..., "x1": ..., "y1": ..., "x2": ..., "y2": ...
+}
+
+    FPS hiển thị trên dashboard là EMA của khoảng thời gian giữa các inference, không phải
+giá trị tức thời của một frame đơn lẻ.
+
+
+5      Thuật toán tracking và ID
+5.1     KalmanTracker
+Kalman giữ vector trạng thái:
+                                    xk = [cx , cy , vx , vy ]T .
+Mô hình chuyển động là vận tốc không đổi với ∆t lấy từ timestamp monotonic của frame.
+Ma trận đo chỉ quan sát (cx , cy ). Phương sai đo mặc định là 36; nhiễu gia tốc liên tục mặc
+định là 400.
+   Kalman chỉ hỗ trợ liên kết và làm mượt. Khi mất detection, nó không được phép phát
+lệnh quay camera.
+
+5.2     DroneLockon
+Tracker hiện là tracker một mục tiêu:
+1. Ở trạng thái IDLE, cần hai detection confidence cao liên tiếp để xác nhận mục tiêu.
+
+2. Ở trạng thái LOCKED, ghép detection theo IoU, khoảng cách tâm, tỷ lệ kích thước và vận
+   tốc Kalman.
+3. Detection có confidence từ 0.10 đến 0.20 chỉ được dùng để nối một khóa đã tồn tại; không
+   dùng để tạo track mới.
+4. Khi không có detection khớp, tracker trở về IDLE; servo giữ góc cuối, không chạy theo dự
+   đoán.
+    Mỗi track mới tăng track_id. Trong tối đa 15 giây sau khi mất dấu, ID có thể được giữ
+lại nếu fingerprint ngoại hình tương đồng. Fingerprint hiện tại là histogram HSV kết hợp ảnh
+xám thu nhỏ; đây là appearance memory nhẹ, chưa phải mạng Re-ID được huấn luyện.
+
+
+6      Điều khiển pan–tilt
+6.1     Sai số ảnh
+Với frame thực có kích thước w × h, tâm ảnh là (w/2, h/2). Sai số được chuẩn hóa về mốc
+1280 × 720:
+                                      1280                     720
+                      ex = (cx − w/2)      ,   ey = (cy − h/2)     .
+                                       w                        h
+
+                                                 4
+AEGIS Tactical – Drone Tracker                                                   SPEC v1.0
+
+
+6.2    StableTrackingController
+Bộ điều khiển có tên PID kép vì điều khiển độc lập hai trục, nhưng profile mặc định hiện tại
+là P với Ki = Kd = 0 để tránh windup và khuếch đại nhiễu detector. Các lớp ổn định bổ
+sung:
+
+  median cửa sổ 3 mẫu để loại một bbox nhảy đơn lẻ;
+
+  bộ lọc sai số thích nghi: phản ứng nhanh khi sai số lớn, lọc mạnh hơn khi gần tâm;
+
+  deadband hysteresis: pan 24 px, tilt 24 × 1.6 = 38.4 px;
+
+  taper tốc độ trong vùng phanh để giảm vượt lố;
+
+  giới hạn gia tốc và delta mỗi lệnh;
+
+  giảm chấn theo đạo hàm sai số khi gần tâm;
+
+  feed-forward theo vận tốc ảnh, chỉ bật khi mục tiêu đang rời tâm rõ ràng.
+
+    Các giới hạn chính:
+
+        Tham số                                  Giá trị
+        Pan Kp , Ki , Kd                         0.006, 0, 0
+        Tilt Kp , Ki , Kd                        0.0045, 0, 0
+        Deadband cơ sở                           24 px
+        Tốc độ tối đa pan/tilt                   85 / 50 độ/s
+        Gia tốc tối đa pan/tilt                  420 / 260 độ/s2
+        Delta tối đa mỗi lệnh                    pan 2.5 độ, tilt 2.0 độ
+        Feed-forward tối đa                      pan 12 độ/s, tilt 8 độ/s
+
+   Lệnh cuối có dạng (∆pan, ∆tilt) và được gửi đến ServoController. Nếu mục tiêu ở
+trong deadband, trục tương ứng được đưa về trạng thái giữ yên.
+
+
+7     Servo và PWM
+ServoController thử hardware PWM trên chip PWM của Pi, dùng channel 0 cho GPIO12 và
+channel 1 cho GPIO13. Nếu không mở được sysfs PWM, code fallback sang gpiozero.Servo
+với LGPIOFactory. Góc được ánh xạ tuyến tính sang xung:
+                                                               
+                                          angle − anglemin
+                  pulsens = 1000 500 +                      2000 .
+                                       anglemax − anglemin
+
+     Giới hạn phần mềm là pan [−90, 90] độ và tilt [−45, 60] độ. Vòng smooth chạy mỗi 20 ms,
+bước nội bộ tối đa 2.5 độ cho pan và 1.8 độ cho tilt. Khi khởi động, servo được đặt về Home
+(0, 0) và hệ thống chờ 1 giây trước khi mở camera/AI.
+
+
+
+
+                                             5
+AEGIS Tactical – Drone Tracker                                              SPEC v1.0
+
+
+8     Web, HDMI và trạng thái
+Flask lắng nghe trên 0.0.0.0:5000. Dashboard hiển thị video MJPEG, FPS AI, số drone,
+confidence, ID, góc servo, sai số X/Y, trạng thái tracker và các thanh PID. API chính:
+
+     Method                    Endpoint                 Chức năng
+     GET                       /                        Render dashboard.
+     GET                       /video_feed              MJPEG frame đã chú thích.
+     GET                       /api/stats               Thống kê runtime dạng
+                                                        JSON.
+     POST                      /api/set_pid             Cập nhật PID và ghi cấu
+                                                        hình V4.
+
+   HDMI được bật tự động khi có DISPLAY hoặc WAYLAND_DISPLAY. Có thể ép bật bằng
+DRONE_TRACKER_HDMI=1, tắt bằng DRONE_TRACKER_HDMI=0.
+
+
+9     Khởi động, dừng và bảo vệ
+1. run_drone_tracker.sh chuyển vào thư mục chứa script và ưu tiên venv/bin/python.
+
+2. main.py tạo lock /tmp/drone_tracker_main.lock; nếu đã có một bản chạy, bản thứ hai
+   tự thoát.
+
+3. Servo về Home và chờ ổn định 1 giây trước khi các worker bắt đầu.
+
+4. Nhấn Ctrl+C để đặt cờ dừng, đưa servo về Home và đóng PWM.
+
+    Hệ thống không ghi telemetry CSV/JSON trong đường chạy hiện tại. Điều này giảm I/O
+và tránh làm ảnh hưởng throughput AI; chẩn đoán runtime dựa trên dashboard, terminal và
+video HDMI.
+
+
+10     Triển khai
+Từ Windows có thể chép ba file runtime chính:
+scp "E:\\pan_tilt_tracker\\main.py" \\
+    "E:\\pan_tilt_tracker\\servo_controller.py" \\
+    "E:\\pan_tilt_tracker\\run_drone_tracker.sh" \\
+    jsf@192.168.1.245:~/drone_tracker/
+
+    Trên Pi, cấp quyền chạy một lần:
+chmod +x ~/drone_tracker/run_drone_tracker.sh
+
+   Sau đó nhấn đúp script và chọn Execute. Dashboard mặc định ở http://192.168.1.245:
+5000.
+
+
+11     Tiêu chí nghiệm thu và giới hạn
+
+
+                                             6
+AEGIS Tactical – Drone Tracker                                                SPEC v1.0
+
+
+
+    Tiêu chí                                   Cách kiểm tra
+    Không có Optical Flow trong runtime        Không còn lớp hoặc lời gọi Optical
+                                               Flow trong main.py.
+    Không chạy hai instance                    Instance thứ hai báo lock và tự thoát.
+    Mất detection không làm camera trôi        Servo giữ góc cuối, trạng thái chuyển
+                                               về giữ yên.
+    Tracking có ID                             Dashboard hiển thị track_id; re-
+                                               acquire có kiểm tra fingerprint.
+    Servo có giới hạn                          Delta, tốc độ và góc đều bị chặn trước
+                                               khi xuất PWM.
+    Mô hình chạy đúng backend                  Dashboard ghi HAILO-8 NPU hoặc
+                                               CPU (best.pt).
+
+   Các giới hạn cần ghi nhớ:
+
+ ID là ID logic của một track, không phải nhận dạng cá thể bằng Re-ID.
+
+ Không có encoder nên dashboard không phát hiện được servo bị kẹt hoặc trượt cơ khí.
+
+ Chiều quay pan/tilt phụ thuộc cách lắp horn và camera; nếu sai chiều, cần đảo dấu điều
+  khiển sau khi kiểm tra thực tế.
+
+ Cấu trúc output của best.hef phải khớp decoder trong main.py.
+
+
+
+
+                                          7
+
