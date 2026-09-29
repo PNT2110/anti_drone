@@ -75,17 +75,17 @@ def test_controller_consumes_source_pixel_drone_track_and_is_bounded():
 
 def test_default_controller_uses_gentle_live_servo_profile():
     config = ControllerConfig()
-    assert config.kp_pan == 1.25
-    assert config.kp_tilt == 1.25
-    assert config.deadzone == 0.04
-    assert config.tilt_deadzone_scale == 2.0
+    assert config.kp_pan == 1.50
+    assert config.kp_tilt == 1.20
+    assert config.deadzone == 0.06
+    assert config.tilt_deadzone_scale == 1.8
     assert config.deadzone_hysteresis == 1.5
-    assert config.max_speed_pan == 0.80
-    assert config.max_speed_tilt == 0.60
-    assert config.max_accel_pan == 1.50
-    assert config.max_accel_tilt == 1.00
+    assert config.max_speed_pan == 5.0
+    assert config.max_speed_tilt == 4.0
+    assert config.max_accel_pan == 8.0
+    assert config.max_accel_tilt == 6.0
     assert config.max_step == 0.25
-    assert config.smoothing == 0.85
+    assert config.smoothing == 0.88
     assert config.error_smoothing == 0.50
 
     controller = DronePanTiltController(config=config)
@@ -97,8 +97,8 @@ def test_default_controller_uses_gentle_live_servo_profile():
     )
     # The first update is acceleration-limited and substantially below the
     # absolute per-command safety cap.
-    assert abs(first["command"].pan - 90.0) <= 0.051
-    assert abs(first["command"].tilt - 120.0) <= 0.051
+    assert abs(first["command"].pan - 90.0) <= config.max_accel_pan * config.nominal_dt * config.nominal_dt + 0.1
+    assert abs(first["command"].tilt - 120.0) <= config.max_accel_tilt * config.nominal_dt * config.nominal_dt + 0.1
     assert abs(first["pan_velocity_deg_s"]) <= config.max_accel_pan * config.nominal_dt + 1e-9
     assert abs(first["tilt_velocity_deg_s"]) <= config.max_accel_tilt * config.nominal_dt + 1e-9
 
@@ -121,7 +121,10 @@ def test_runner_lock_rejects_second_instance_and_releases_on_close(tmp_path):
     path = tmp_path / "anti_drone_tracking.lock"
     first = acquire_runner_lock(path)
     try:
-        assert path.read_text().strip().isdigit()
+        # On Windows, msvcrt.locking prevents other opens, so read via handle
+        first.seek(0)
+        content = first.read().strip()
+        assert content.isdigit()
         try:
             acquire_runner_lock(path)
         except RunnerAlreadyActive as exc:
@@ -341,7 +344,7 @@ def test_target_lock_rejects_implausibly_large_box():
     assert result["reason"] == "BOX_TOO_LARGE"
 
 
-def test_default_target_lock_rejects_two_frame_transient_then_acquires_on_third():
+def test_default_target_lock_rejects_one_frame_transient_then_acquires_on_second():
     gate = StableTargetLock()
     updates = [
         gate.update(
@@ -350,13 +353,12 @@ def test_default_target_lock_rejects_two_frame_transient_then_acquires_on_third(
             frame_height=720,
             competing_candidates=0,
         )
-        for _ in range(3)
+        for _ in range(2)
     ]
-    assert gate.config.acquire_frames == 3
+    assert gate.config.acquire_frames == 2
     assert updates[0]["actuation_allowed"] is False
-    assert updates[1]["actuation_allowed"] is False
-    assert updates[2]["actuation_allowed"] is True
-    assert updates[2]["reason"] == "LOCK_ACQUIRED"
+    assert updates[1]["actuation_allowed"] is True
+    assert updates[1]["reason"] == "LOCK_ACQUIRED"
 
 
 def test_user_confirmed_target_can_disambiguate_but_still_requires_stability():

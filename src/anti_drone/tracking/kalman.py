@@ -65,7 +65,9 @@ class KalmanBoxFilter:
         gain = self.covariance @ observation.T @ np.linalg.pinv(innovation_covariance)
         self.state = self.state + gain @ innovation
         identity = np.eye(6, dtype=np.float64)
-        self.covariance = (identity - gain @ observation) @ self.covariance
+        IKH = identity - gain @ observation
+        self.covariance = IKH @ self.covariance @ IKH.T + gain @ noise @ gain.T
+        self.covariance = (self.covariance + self.covariance.T) * 0.5
         self.timestamp = float(timestamp)
         return measurement_to_box(np.array([self.state[0], self.state[1], self.state[4], self.state[5]]))
 

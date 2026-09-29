@@ -115,14 +115,15 @@ class ByteTrack:
 
     def _apply_match(self, track_id: int, detection: Detection, timestamp: float, frame_id: int, source_frame_id: int | None) -> bool:
         track = self.tracks[track_id]
+        matched = mark_matched(track, timestamp, frame_id, detection.confidence >= self.config.track_high_thresh, source_frame_id, self.lifecycle)
+        if not matched:
+            track.bbox_observed = None
+            return False
         self.filters[track_id].update(detection.box, timestamp)
         track.bbox_observed = detection.box.astype(np.float32, copy=True)
         track.bbox_predicted = track.bbox_observed.copy()
         track.confidence = float(detection.confidence)
-        matched = mark_matched(track, timestamp, frame_id, detection.confidence >= self.config.track_high_thresh, source_frame_id, self.lifecycle)
-        if not matched:
-            track.bbox_observed = None
-        return matched
+        return True
 
     def update(self, detections: list[Detection], timestamp: float, frame_id: int = 0, source_frame_id: int | None = None) -> list[Track]:
         previous_timestamp = self._last_timestamp
@@ -153,6 +154,12 @@ class ByteTrack:
                 if not mark_unmatched(self.tracks[track_id], timestamp, frame_id, self.lifecycle):
                     self.tracks.pop(track_id, None)
                     self.filters.pop(track_id, None)
+        
+        for track_id, track in list(self.tracks.items()):
+            if track.state == TrackState.TENTATIVE and not track.matched_this_frame:
+                self.tracks.pop(track_id, None)
+                self.filters.pop(track_id, None)
+        
         used_high = matched_high
         for index, detection in enumerate(high):
             if index in used_high or detection.confidence < self.config.new_track_thresh:

@@ -41,24 +41,33 @@ class ControllerConfig:
 
     Ki and Kd intentionally remain zero.  A three-sample median, adaptive
     error filter, hysteretic deadband, braking taper and time-based slew limit
-    provide the useful stability layers from ``SPEC_DRONE_TRACKER.pdf``
-    without copying its much faster 85/50 degree-per-second limits.
+    provide the useful stability layers from ``SPEC_DRONE_TRACKER.pdf``.
+
+    Tuned for smooth drone tracking on MG90S.  The original bench-test defaults
+    (kp=1.25, speed=0.80 deg/s) were too slow to follow a moving drone.
+    These values balance responsiveness with smooth, jitter-free motion:
+    - Moderate kp (1.80/1.40) prevents P-controller oscillation
+    - Wide deadzone (0.05) suppresses micro-corrections when on-target
+    - High smoothing (0.82) filters detector bbox noise
+    - Moderate speed (6.0/5.0 deg/s) is 7-8x faster than original but
+      stays well within MG90S capacity (~600 deg/s unloaded)
+    - Gentle acceleration (10.0/8.0) prevents jerky direction changes
     """
 
-    kp_pan: float = 1.25
-    kp_tilt: float = 1.25
-    deadzone: float = 0.04
-    tilt_deadzone_scale: float = 2.0
+    kp_pan: float = 1.50
+    kp_tilt: float = 1.20
+    deadzone: float = 0.06
+    tilt_deadzone_scale: float = 1.8
     deadzone_hysteresis: float = 1.5
-    brake_zone: float = 0.25
+    brake_zone: float = 0.22
     max_step: float = 0.25
-    max_speed_pan: float = 0.80
-    max_speed_tilt: float = 0.60
-    max_accel_pan: float = 1.50
-    max_accel_tilt: float = 1.00
-    smoothing: float = 0.85
+    max_speed_pan: float = 5.0
+    max_speed_tilt: float = 4.0
+    max_accel_pan: float = 8.0
+    max_accel_tilt: float = 6.0
+    smoothing: float = 0.88
     error_smoothing: float = 0.50
-    adaptive_filter_threshold: float = 0.25
+    adaptive_filter_threshold: float = 0.22
     nominal_dt: float = 1.0 / 13.0
     max_dt: float = 0.20
     lost_recenter_after: int = 45

@@ -266,15 +266,12 @@ def main() -> int:
                 control_tracks = []
                 control_source = "AUTO_CONFIDENCE_BLOCKED"
             lock_candidate = select_drone_target(control_tracks)
+            n_candidates = len([t for t in tracks if t.state == TrackState.CONFIRMED]) - 1
             target_lock_state = target_lock.update(
                 lock_candidate,
                 frame_width=frame.shape[1],
                 frame_height=frame.shape[0],
-                # The single-drone adapter has already selected one candidate.
-                # Competing raw boxes remain logged, while motion stability,
-                # confidence, area, and jump gates decide whether auto-control
-                # may arm.  A click is an optional override, not a requirement.
-                competing_candidates=0,
+                competing_candidates=max(0, n_candidates),
                 confirmed_by_user=selection_anchor is not None,
             )
             result = bridge.update(

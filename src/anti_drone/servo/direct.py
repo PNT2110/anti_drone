@@ -32,6 +32,7 @@ def pulse_for_angle(angle: float, axis: AxisConfig, min_pulse_us: int = 500, max
 class DirectServoConfig:
     pan_gpio: int = 12
     tilt_gpio: int = 13
+    gpio_chip: int | None = None
     frequency_hz: int = 50
     min_pulse_us: int = 500
     max_pulse_us: int = 2400
@@ -40,6 +41,9 @@ class DirectServoConfig:
     pan_pulse_offset_us: int = 0
     tilt_pulse_offset_us: int = 10_000
     second_axis_arm_delay_s: float = 0.15
+    # Suppress PWM updates smaller than this to prevent servo micro-jitter
+    # from detector bbox noise. 8µs ≈ 0.5° on a typical 500-2400µs servo.
+    pulse_deadband_us: int = 8
     pan: AxisConfig = AxisConfig(20.0, 160.0, 90.0)
     tilt: AxisConfig = AxisConfig(80.0, 130.0, 120.0)
 
@@ -103,7 +107,12 @@ class PiDirectServoTransport:
         self._tx_servo = getattr(self._lgpio, "tx_servo", None)
         if not callable(self._tx_servo):
             raise RuntimeError("lgpio.tx_servo is required for stable servo timing")
-        self._handle = self._lgpio.gpiochip_open(0)
+        
+        chip = self.config.gpio_chip
+        if chip is None:
+            import os
+            chip = 4 if os.path.exists("/dev/gpiochip4") else 0
+        self._handle = self._lgpio.gpiochip_open(chip)
         claimed: list[int] = []
         try:
             self._lgpio.gpio_claim_output(self._handle, self.config.pan_gpio, 0)
@@ -155,8 +164,9 @@ class PiDirectServoTransport:
             self._armed = True
             return
         if tilt != self._tilt_pulse_us:
-            self._schedule(self.config.tilt_gpio, tilt, self.config.tilt_pulse_offset_us)
-            self._tilt_pulse_us = tilt
+            if abs(tilt - self._tilt_pulse_us) >= self.config.pulse_deadband_us:
+                self._schedule(self.config.tilt_gpio, tilt, self.config.tilt_pulse_offset_us)
+                self._tilt_pulse_us = tilt
         if not self._pan_armed:
             self._pending_pan_pulse_us = pan
             if self._monotonic() - float(self._arm_started_at) >= self.config.second_axis_arm_delay_s:
@@ -165,8 +175,9 @@ class PiDirectServoTransport:
                 self._pan_armed = True
             return
         if pan != self._pan_pulse_us:
-            self._schedule(self.config.pan_gpio, pan, self.config.pan_pulse_offset_us)
-            self._pan_pulse_us = pan
+            if abs(pan - self._pan_pulse_us) >= self.config.pulse_deadband_us:
+                self._schedule(self.config.pan_gpio, pan, self.config.pan_pulse_offset_us)
+                self._pan_pulse_us = pan
 
     def arm_pose(self, command: ServoCommand) -> None:
         """Hold one commissioned pose, phasing the two axes safely."""

@@ -1,0 +1,58 @@
+[
+  {
+    "model": "yolo11n-drone-480",
+    "images": 50,
+    "detections": 47,
+    "avg_confidence": 0.7058,
+    "avg_time_ms": 155.7,
+    "fps": 6.4
+  },
+  {
+    "model": "yolo11n-drone-640",
+    "images": 50,
+    "detections": 48,
+    "avg_confidence": 0.7188,
+    "avg_time_ms": 116.7,
+    "fps": 8.6
+  },
+  {
+    "model": "yolo26n-drone-480",
+    "images": 50,
+    "detections": 45,
+    "avg_confidence": 0.7779,
+    "avg_time_ms": 95.1,
+    "fps": 10.5
+  },
+  {
+    "model": "yolo26n-drone-640",
+    "images": 50,
+    "detections": 45,
+    "avg_confidence": 0.7916,
+    "avg_time_ms": 116.8,
+    "fps": 8.6
+  },
+  {
+    "model": "yolov8n-drone-480",
+    "images": 50,
+    "detections": 47,
+    "avg_confidence": 0.7322,
+    "avg_time_ms": 92.6,
+    "fps": 10.8
+  },
+  {
+    "model": "yolov8n-drone-640",
+    "images": 50,
+    "detections": 45,
+    "avg_confidence": 0.7338,
+    "avg_time_ms": 128.2,
+    "fps": 7.8
+  },
+  {
+    "model": "yolov8n-drone-best",
+    "images": 50,
+    "detections": 11,
+    "avg_confidence": 0.4492,
+    "avg_time_ms": 108.8,
+    "fps": 9.2
+  }
+]

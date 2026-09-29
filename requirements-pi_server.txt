@@ -1,0 +1,8 @@
+# Raspberry Pi 5 64-bit inference environment. Training/export stay on the GPU host.
+numpy>=1.26,<2.3
+opencv-python-headless>=4.10
+onnxruntime>=1.20
+tflite-runtime>=2.14; platform_machine == "aarch64"
+# NCNN availability depends on the Pi OS/Python wheel; install/build it only
+# after checking the selected Pi architecture and record the exact version.
+ncnn>=1.0; platform_machine == "aarch64"

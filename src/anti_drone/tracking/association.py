@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from itertools import permutations
 from typing import Iterable
 
 import numpy as np
@@ -63,8 +62,7 @@ def assign_min_cost(cost: np.ndarray) -> list[tuple[int, int]]:
                 return memo[key]
             if row == rows:
                 return (0, 0.0), ()
-            skip_count, skip_cost = solve(row + 1, used)[0]
-            best = ((skip_count, skip_cost), solve(row + 1, used)[1])
+            best = solve(row + 1, used)
             for col in range(cols):
                 value = float(cost[row, col])
                 if used & (1 << col) or not np.isfinite(value):

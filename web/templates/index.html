@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ Thống Phát Hiện Drone</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="header-left">
+            <div class="logo">
+                <div class="logo-icon">
+                    <i class="fas fa-crosshairs"></i>
+                </div>
+                <div class="logo-text">
+                    <h1>DRONE DETECTOR</h1>
+                    <span class="subtitle">Hệ thống phát hiện drone thời gian thực</span>
+                </div>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="model-selector">
+                <i class="fas fa-brain"></i>
+                <select id="model-select">
+                    <option value="">Đang tải mô hình...</option>
+                </select>
+            </div>
+            <div class="gpu-badge" id="gpu-badge">
+                <i class="fas fa-microchip"></i>
+                <span>GPU</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main>
+        <!-- Left: Video Area -->
+        <section class="video-section">
+            <!-- Tab Navigation -->
+            <div class="tab-nav">
+                <button class="tab-btn active" data-tab="video-tab">
+                    <i class="fas fa-film"></i>
+                    <span>Tải Video</span>
+                </button>
+                <button class="tab-btn" data-tab="webcam-tab">
+                    <i class="fas fa-video"></i>
+                    <span>Camera</span>
+                </button>
+            </div>
+
+            <!-- Video Upload Tab -->
+            <div id="video-tab" class="tab-content active">
+                <div class="upload-zone" id="upload-zone">
+                    <div class="upload-icon">
+                        <i class="fas fa-cloud-arrow-up"></i>
+                    </div>
+                    <h3>Kéo thả video vào đây</h3>
+                    <p>hoặc <span class="browse-link">nhấn để chọn file</span></p>
+                    <div class="supported-formats">
+                        <span class="format-tag">MP4</span>
+                        <span class="format-tag">AVI</span>
+                        <span class="format-tag">MKV</span>
+                        <span class="format-tag">MOV</span>
+                    </div>
+                    <input type="file" id="video-input" accept="video/*" hidden>
+                </div>
+                
+                <div class="video-display" id="video-result-container" style="display: none;">
+                    <div class="video-frame">
+                        <img id="video-stream" src="" alt="Detection Stream">
+                        <div class="video-overlay-top">
+                            <span class="live-badge" id="processing-badge">
+                                <i class="fas fa-circle-notch fa-spin"></i> ĐANG XỬ LÝ
+                            </span>
+                        </div>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-track">
+                            <div class="progress-fill" id="progress-bar"></div>
+                        </div>
+                        <span class="progress-label" id="progress-text">Chờ xử lý...</span>
+                    </div>
+                    <div class="action-bar">
+                        <button id="download-btn" class="btn btn-gradient" disabled>
+                            <i class="fas fa-download"></i> Tải Video
+                        </button>
+                        <button id="reset-btn" class="btn btn-outline">
+                            <i class="fas fa-redo"></i> Video Khác
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Webcam Tab -->
+            <div id="webcam-tab" class="tab-content">
+                <div class="webcam-area">
+                    <div class="video-frame">
+                        <video id="webcam-video" autoplay playsinline style="display:none;"></video>
+                        <canvas id="webcam-canvas"></canvas>
+                        <div class="webcam-placeholder" id="webcam-placeholder">
+                            <i class="fas fa-video-slash"></i>
+                            <p>Nhấn "Bắt đầu" để mở camera</p>
+                        </div>
+                    </div>
+                    <div class="action-bar">
+                        <button id="start-webcam" class="btn btn-gradient">
+                            <i class="fas fa-play"></i> Bắt Đầu
+                        </button>
+                        <button id="stop-webcam" class="btn btn-danger" disabled>
+                            <i class="fas fa-stop"></i> Dừng
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right: Stats Panel -->
+        <aside class="stats-section">
+            <div class="stats-header">
+                <i class="fas fa-chart-line"></i>
+                <h3>Thống Kê</h3>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card stat-fps">
+                    <div class="stat-icon"><i class="fas fa-gauge-high"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="stat-fps">0</span>
+                        <span class="stat-label">FPS</span>
+                    </div>
+                </div>
+
+                <div class="stat-card stat-time">
+                    <div class="stat-icon"><i class="fas fa-clock"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="stat-time">0</span>
+                        <span class="stat-label">ms / frame</span>
+                    </div>
+                </div>
+
+                <div class="stat-card stat-count">
+                    <div class="stat-icon"><i class="fas fa-bullseye"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="stat-count">0</span>
+                        <span class="stat-label">Phát hiện</span>
+                    </div>
+                </div>
+
+                <div class="stat-card stat-conf">
+                    <div class="stat-icon"><i class="fas fa-percentage"></i></div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="stat-conf">0%</span>
+                        <span class="stat-label">Độ tin cậy</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="model-info-card" id="model-info">
+                <h4><i class="fas fa-info-circle"></i> Mô hình đang dùng</h4>
+                <p id="active-model-name">—</p>
+            </div>
+        </aside>
+    </main>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

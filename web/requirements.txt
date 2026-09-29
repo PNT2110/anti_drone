@@ -1,0 +1,19 @@
+# Web Application Dependencies for Anti-Drone Object Detection
+# Compatible with Python 3.12 on Windows
+
+# Web Framework & Server
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+websockets>=13.0
+python-multipart>=0.0.12
+jinja2>=3.1.4
+httpx>=0.27.0
+
+# Deep Learning & Computer Vision
+ultralytics>=8.3.0
+opencv-python>=4.10.0
+numpy>=1.26.0
+onnxruntime>=1.19.0
+
+# Testing
+pytest>=8.0.0
