@@ -89,6 +89,23 @@ def create_stream_tracker() -> IdentityTracker:
     return create_tracker_from_env()
 
 
+def tracked_stats(result) -> tuple[int, float, list[int]]:
+    """Count, mean confidence and IDs of the boxes the tracker has confirmed.
+
+    Raw detector output also contains low-confidence and one-frame boxes that
+    are never drawn, so the UI numbers are taken from tracked objects only.
+    """
+
+    confidences = [
+        confidence
+        for confidence, track_id in zip(result.confidences, result.track_ids)
+        if track_id is not None
+    ]
+    track_ids = [int(track_id) for track_id in result.track_ids if track_id is not None]
+    average = float(np.mean(confidences)) if confidences else 0.0
+    return len(confidences), round(average, 4), track_ids
+
+
 def encode_jpeg(frame: np.ndarray, quality: int = 80) -> bytes:
     ok, buffer = cv2.imencode(
         ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, int(max(40, min(95, quality)))]
@@ -169,7 +186,10 @@ async def detect_image(file: UploadFile = File(...)):
     if frame is None:
         return JSONResponse({"error": "Không đọc được ảnh"}, status_code=400)
     # A still image is its own stream: IDs must not leak between requests.
-    result = await asyncio.to_thread(manager.predict, frame, tracker=create_stream_tracker())
+    # There is no second frame to confirm a box on, so confirm immediately.
+    result = await asyncio.to_thread(
+        manager.predict, frame, tracker=create_tracker_from_env(confirm_hits=1)
+    )
     # Return annotated image as base64
     _, buf = cv2.imencode('.jpg', result.annotated_frame)
     b64 = base64.b64encode(buf).decode('utf-8')
@@ -275,15 +295,12 @@ def process_video_task(task_id: str, input_path: str, output_path: str):
             )
             dt = (time.perf_counter() - t0) * 1000.0
 
-            min_visible_confidence = float(
-                os.getenv("ANTI_DRONE_NEW_TRACK_MIN_CONFIDENCE", "0.25")
-            )
+            # Draw only what the tracker has confirmed. A box without an ID is
+            # either low-confidence clutter or has not persisted long enough.
             visible_indices = [
                 index
-                for index, (confidence, track_id) in enumerate(
-                    zip(result.confidences, result.track_ids)
-                )
-                if track_id is not None or confidence >= min_visible_confidence
+                for index, track_id in enumerate(result.track_ids)
+                if track_id is not None
             ]
             detector = getattr(manager, "_active_detector", None)
             if detector is not None and hasattr(detector, "draw_styled_detections"):
@@ -299,21 +316,22 @@ def process_video_task(task_id: str, input_path: str, output_path: str):
                 annotated = result.annotated_frame
 
             frame_idx += 1
-            seen_ids.update(track_id for track_id in result.track_ids if track_id is not None)
-            detection_observations += result.total_detections
+            tracked_count, tracked_confidence, tracked_ids = tracked_stats(result)
+            seen_ids.update(tracked_ids)
+            detection_observations += tracked_count
             fields = {
                 'processed_frames': frame_idx,
                 'unique_track_ids': sorted(seen_ids),
                 'detection_observations': detection_observations,
                 'stats': {
-                    'total_detections': result.total_detections,
-                    'avg_confidence': round(result.avg_confidence, 4),
+                    'total_detections': tracked_count,
+                    'avg_confidence': tracked_confidence,
                     'inference_time_ms': round(dt, 1),
                     # This is the paced output rate, not raw inference throughput.
                     # The UI must tell the truth about real-time playback.
                     'fps': round(float(fps), 1),
                     'progress': round(frame_idx / max(total_frames, 1) * 100, 1),
-                    'track_ids': [int(track_id) for track_id in result.track_ids if track_id is not None],
+                    'track_ids': tracked_ids,
                 },
             }
             if annotated is not None and annotated.size > 0:
@@ -518,14 +536,15 @@ async def websocket_endpoint(websocket: WebSocket):
             _, buffer = cv2.imencode('.jpg', result.annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
             b64_img = base64.b64encode(buffer).decode('utf-8')
 
+            tracked_count, tracked_confidence, tracked_ids = tracked_stats(result)
             response = {
                 "image": f"data:image/jpeg;base64,{b64_img}",
                 "stats": {
-                    "total_detections": result.total_detections,
-                    "avg_confidence": round(result.avg_confidence, 4),
+                    "total_detections": tracked_count,
+                    "avg_confidence": tracked_confidence,
                     "inference_time_ms": round(dt, 1),
                     "fps": round(1000 / dt, 1) if dt > 0 else 0,
-                    "track_ids": [int(track_id) for track_id in result.track_ids if track_id is not None],
+                    "track_ids": tracked_ids,
                 }
             }
             await websocket.send_text(json.dumps(response))
@@ -578,14 +597,15 @@ async def server_camera_endpoint(websocket: WebSocket):
             inference_ms = (time.perf_counter() - t0) * 1000.0
             encoded = await asyncio.to_thread(encode_jpeg, result.annotated_frame, 82)
             b64_img = base64.b64encode(encoded).decode("ascii")
+            tracked_count, tracked_confidence, tracked_ids = tracked_stats(result)
             await websocket.send_text(json.dumps({
                 "image": f"data:image/jpeg;base64,{b64_img}",
                 "stats": {
-                    "total_detections": result.total_detections,
-                    "avg_confidence": round(result.avg_confidence, 4),
+                    "total_detections": tracked_count,
+                    "avg_confidence": tracked_confidence,
                     "inference_time_ms": round(inference_ms, 1),
                     "fps": round(1.0 / max(time.perf_counter() - started, 1e-6), 1),
-                    "track_ids": [int(track_id) for track_id in result.track_ids if track_id is not None],
+                    "track_ids": tracked_ids,
                 },
             }))
             delay = frame_interval - (time.perf_counter() - started)

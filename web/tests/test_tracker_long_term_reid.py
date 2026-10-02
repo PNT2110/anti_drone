@@ -247,3 +247,76 @@ def test_env_factory_defaults_and_overrides(monkeypatch) -> None:
     tracker = _TRACKER_MODULE.create_tracker_from_env()
     assert tracker.max_lost_seconds == 2.5
     assert tracker.reid_memory_seconds == 12.0
+
+
+def test_track_does_not_jump_to_a_box_it_could_not_reach() -> None:
+    tracker = IdentityTracker()
+    assert tracker.update(_frame(25), [[25, 70, 85, 130]], [0.9], 0.0) == [1]
+
+    # One frame later the only box is 2.5 box diagonals away. A drone moves
+    # ~0.2 diagonals per frame, so this is another object, not ID 1.
+    assert tracker.update(_frame(240), [[240, 70, 300, 130]], [0.9], 1 / 30) == [2]
+    assert tracker.tracks[1].box.tolist() == [25, 70, 85, 130]
+
+
+def test_one_frame_false_positive_never_gets_an_id() -> None:
+    tracker = IdentityTracker(confirm_hits=3)
+    drone = [[25, 70, 85, 130]]
+    assert tracker.update(_frame(), drone, [0.9], 0 / 30) == [None]
+    assert tracker.update(_frame(), drone, [0.9], 1 / 30) == [None]
+    assert tracker.update(_frame(), drone, [0.9], 2 / 30) == [1]
+
+    # A confident box that shows up for a single frame stays anonymous and
+    # does not consume ID 2.
+    flicker = tracker.update(_frame(), drone + [[220, 70, 280, 130]], [0.9, 0.6], 3 / 30)
+    assert flicker == [1, None]
+    for step in range(4, 30):
+        assert tracker.update(_frame(), drone, [0.9], step / 30) == [1]
+    assert tracker.next_id == 2
+
+
+def test_low_confidence_box_away_from_the_track_is_ignored() -> None:
+    tracker = IdentityTracker()
+    image, (drone_box, lookalike_box) = _small_drone_frame_at(15, 60)
+    assert tracker.update(image, [drone_box], [0.9], 0.0) == [1]
+
+    # The drone is missed this frame. A weak box 1.3 diagonals away that even
+    # looks the same is still not ID 1: weak boxes must overlap the track.
+    assert tracker.update(image, [lookalike_box], [0.15], 1 / 30) == [None]
+    assert tracker.tracks[1].box.tolist() == drone_box
+
+
+def test_low_confidence_boxes_only_bridge_a_short_dropout() -> None:
+    tracker = IdentityTracker()
+    box = [[25, 70, 85, 130]]
+    assert tracker.update(_frame(), box, [0.9], 0.0) == [1]
+    assert tracker.update(_frame(), box, [0.15], 0.5) == [1]
+    # Static clutter scores low but steadily. More than a second without a
+    # confident box, the weak one no longer keeps the ID on screen.
+    assert tracker.update(_frame(), box, [0.15], 1.2) == [None]
+    assert tracker.update(_frame(), box, [0.9], 1.3) == [1]
+
+
+def test_nested_duplicate_box_on_the_same_drone_is_suppressed() -> None:
+    tracker = IdentityTracker()
+    ids = tracker.update(
+        _frame(), [[35, 80, 75, 120], [25, 70, 85, 130]], [0.6, 0.9], 0.0
+    )
+    assert ids == [None, 1]
+    assert tracker.next_id == 2
+
+
+def test_velocity_uses_time_since_track_was_last_seen() -> None:
+    tracker = IdentityTracker()
+    assert tracker.update(_frame(25), [[25, 70, 85, 130]], [0.9], 0.0) == [1]
+    for step in range(1, 15):
+        tracker.update(_frame(25), [], [], step / 30)
+    # 30 px in 0.5 s is 60 px/s, not 30 px per 1/30 s frame (900 px/s).
+    assert tracker.update(_frame(55), [[55, 70, 115, 130]], [0.9], 15 / 30) == [1]
+    assert abs(float(tracker.tracks[1].velocity[0]) - 0.75 * 60.0) < 1.0
+
+
+def test_env_factory_confirms_streams_after_three_hits(monkeypatch) -> None:
+    monkeypatch.delenv("ANTI_DRONE_TRACK_CONFIRM_HITS", raising=False)
+    assert _TRACKER_MODULE.create_tracker_from_env().confirm_hits == 3
+    assert _TRACKER_MODULE.create_tracker_from_env(confirm_hits=1).confirm_hits == 1

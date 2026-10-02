@@ -260,13 +260,16 @@ class YOLODetector:
 
         annotated_frame = frame_bgr.copy()
         if draw:
+            # Only boxes the tracker has confirmed are drawn; unconfirmed
+            # ones are one-frame or low-confidence candidates.
+            shown = [index for index, track_id in enumerate(track_ids) if track_id is not None]
             annotated_frame = self.draw_styled_detections(
                 frame=annotated_frame,
-                boxes=boxes,
-                confidences=confidences,
-                class_ids=class_ids,
-                class_names=class_names,
-                track_ids=track_ids,
+                boxes=[boxes[index] for index in shown],
+                confidences=[confidences[index] for index in shown],
+                class_ids=[class_ids[index] for index in shown],
+                class_names=[class_names[index] for index in shown],
+                track_ids=[track_ids[index] for index in shown],
                 fps=fps if draw_fps else None,
             )
 

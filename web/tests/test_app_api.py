@@ -183,7 +183,9 @@ def test_valid_video_completes_and_is_downloadable(client, tmp_path):
     assert stats["status"] == "completed"
     assert stats["processed_frames"] == 5
     assert stats["unique_track_ids"] == [1]
-    assert stats["detection_observations"] == 5
+    # The stream tracker confirms a box on its third frame; only confirmed
+    # boxes are drawn and counted.
+    assert stats["detection_observations"] == 3
     download = client.get(f"/api/video/download/{task_id}")
     assert download.status_code == 200
     assert len(download.content) > 0
@@ -252,7 +254,12 @@ def test_webcam_skips_malformed_frame(client):
         websocket.send_text("data:image/jpeg;base64")  # no comma
         websocket.send_text("data:image/jpeg;base64,%%%not-base64%%%")
         websocket.send_text("data:image/jpeg;base64,")  # empty payload
-        websocket.send_text(jpeg_data_uri())
-        message = websocket.receive_json()
-        assert message["stats"]["total_detections"] == 1
-        assert message["stats"]["track_ids"] == [1]
+        messages = []
+        for _ in range(3):
+            websocket.send_text(jpeg_data_uri())
+            messages.append(websocket.receive_json())
+        # Unconfirmed boxes are not reported; the third frame confirms ID 1.
+        assert messages[0]["stats"]["total_detections"] == 0
+        assert messages[0]["stats"]["track_ids"] == []
+        assert messages[2]["stats"]["total_detections"] == 1
+        assert messages[2]["stats"]["track_ids"] == [1]
