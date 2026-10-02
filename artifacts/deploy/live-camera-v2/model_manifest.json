@@ -1,0 +1,71 @@
+{
+  "candidate_id": "yolov8n-480-live-camera-stage3-epoch4",
+  "purpose": "USB-camera single-drone detection and tracking",
+  "model_family": "YOLOv8n",
+  "backend": "NCNN",
+  "precision": "FP32",
+  "imgsz": 480,
+  "confidence_threshold": 0.25,
+  "nms_iou": 0.70,
+  "suppress_contained_duplicates": true,
+  "identity_mode": "SINGLE_DRONE_SESSION",
+  "public_target_id": 1,
+  "base_scope18_best_pt_sha256": "359ddd23b283cd0eca15927b13b93c6045236f01bcf2bcd574b21f8b16b2ba3e",
+  "full_my_dataset_checkpoint_sha256": "7f6bdd8ee44bbcdc8cd98f1607dcc8697678ca90b12959d8b233f2314da46bd4",
+  "stage2_checkpoint_sha256": "c361981914a718c8d0d4304ca113ab58d371c22a6af216a366ad3dcace145e74",
+  "adapted_pt_sha256": "95311d7a56480bf5c1c831f94232443b89f8c96e19aaf0d4a446875a51050568",
+  "ncnn_param_sha256": "8d1a2d62f65c5a44f138dd2a2da43fa87246ecb6948f9a020b7cc86a46d095c5",
+  "ncnn_bin_sha256": "9f36f35538e9ec10074f09279a94829ea82fb8b41a75e86091008a3885ce60eb",
+  "base_dataset_manifest_sha256": "b7a44e2b36c341bf73b427bbe3b562d0f198e44cb9b35577e5df8c88e1cdbd3b",
+  "stage2_dataset_manifest_sha256": "c284b79de07ee8b10c22aa2b12809eea9de88a295dc05b9e3f626eb9c89203f6",
+  "stage3_dataset_manifest_sha256": "8dd3202678f6f03f86c0f4bdf0a1feb6676670bc01c7e91071b5888684c5b245",
+  "training_counts": {
+    "v3_train": 12142,
+    "my_dataset_train": 2334,
+    "generated_close_crops": 4271,
+    "stage2_usb_seed_records": 512,
+    "fresh_usb_frames": 26,
+    "fresh_usb_sampling_records": 1248,
+    "total_stage3_train_records": 20507
+  },
+  "selected_stage3_epoch": 4,
+  "frozen_v3_val_metrics": {
+    "precision": 0.98837,
+    "recall": 0.98167,
+    "mAP50": 0.99030,
+    "mAP50_95": 0.61508
+  },
+  "usb_diagnostic": {
+    "fresh_frames": 26,
+    "pytorch_one_detection_frames": 26,
+    "pytorch_min_confidence": 0.879,
+    "pytorch_mean_confidence": 0.930,
+    "old_pi_camera_fixed_confidence": 0.941,
+    "old_current_false_confidence": 0.935,
+    "fresh_empty_room_detection_count": 0
+  },
+  "pytorch_ncnn_diagnostic_parity": {
+    "image_count": 29,
+    "detection_counts_exact": true,
+    "maximum_confidence_absolute_difference": 0.03528,
+    "minimum_bbox_iou": 0.93648,
+    "strict_scope20_bbox_iou_gate_pass": false,
+    "classification": "DIAGNOSTIC_WARNING"
+  },
+  "v3_test_accessed": false,
+  "created_at": "2026-09-27T02:33:01+07:00",
+  "live_fresh_frame_verified": true,
+  "live_usb_verification": {
+    "frames_processed": 1614,
+    "observed_frames": 1604,
+    "no_target_frames": 10,
+    "public_target_ids": [1],
+    "internal_tracker_target_ids": [1, 2, 3, 5],
+    "internal_tracker_id_changes": 3,
+    "effective_fps": 15.2592,
+    "temperature_after_celsius": 51.6,
+    "throttled_after": "0x0",
+    "physical_output_enabled": false
+  },
+  "notes": "Development live-camera artifact only; immutable Scope25 production-candidate files remain untouched. Public ID 1 is session-scoped for the single-drone application; tracker internal IDs remain logged for diagnostics."
+}

@@ -1,0 +1,49 @@
+{
+  "status": "BLOCKED_PI_VALIDATION",
+  "failures": [
+    "missing_or_empty:.runtime\\pi-replay\\onnx\\replay_report.json",
+    "missing_or_empty:.runtime\\pi-replay\\ncnn\\replay_report.json",
+    "missing_or_empty:.runtime\\pi-replay\\tflite\\replay_report.json",
+    "missing_or_empty:.runtime\\pi-camera-test\\onnx\\camera_report.json",
+    "camera_probe_unexpected:None",
+    "phase5_pi_camera_missing:onnx",
+    "phase5_pi_camera_missing:ncnn",
+    "phase5_pi_camera_missing:tflite"
+  ],
+  "phase4": {
+    "parity": "DONE",
+    "deployment_checksum_failures": []
+  },
+  "pi_bundle": {
+    "status": "DONE",
+    "file_count": 23,
+    "failures": []
+  },
+  "phase5": {
+    "replay": {},
+    "camera": null
+  },
+  "phase6": {
+    "benchmarks": {
+      "onnx": "DONE_HOST_REFERENCE",
+      "ncnn": "DONE_HOST_REFERENCE",
+      "tflite": "DONE_HOST_REFERENCE"
+    },
+    "pi_run_id": "20260920-pi5",
+    "pi_benchmarks": {
+      "onnx": "DONE_PI",
+      "ncnn": "DONE_PI",
+      "tflite": "DONE_PI"
+    },
+    "hardware": "AMD64"
+  },
+  "phase5_pi": {
+    "camera": {}
+  },
+  "phase7": {
+    "dataset_manifest_sha256": "3626696d97126c0e8da925c4bf3d282168c8ed3615361f3f536ec614eb94317d",
+    "matches_phase3": true,
+    "incoming_reviewed_files": []
+  },
+  "timestamp_unix": 1790707329.4869368
+}

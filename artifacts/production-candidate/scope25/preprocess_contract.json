@@ -1,0 +1,16 @@
+{
+  "contract_version": "scope25-preprocess-v1",
+  "input_color": "OpenCV BGR",
+  "color_conversion": "BGR_to_RGB",
+  "letterbox": {
+    "rect": false,
+    "target_width": 480,
+    "target_height": 480,
+    "padding": 114,
+    "interpolation": "INTER_LINEAR"
+  },
+  "dtype": "float32",
+  "normalization": "divide_by_255",
+  "tensor_layout": "NCHW",
+  "batch": 1
+}

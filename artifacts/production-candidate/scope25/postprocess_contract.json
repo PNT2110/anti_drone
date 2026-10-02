@@ -1,0 +1,9 @@
+{
+  "contract_version": "scope25-postprocess-v1",
+  "raw_output": "[1,5,N]",
+  "interpretation": "xywh_plus_single_class_confidence",
+  "class_id": 0,
+  "confidence_threshold": 0.25,
+  "nms_iou": 0.7,
+  "external_nms": "exactly_once"
+}

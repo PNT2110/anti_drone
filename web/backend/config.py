@@ -90,15 +90,30 @@ DEFAULT_PORT: int = int(os.getenv("ANTI_DRONE_PORT", "8000"))
 # ==============================================================================
 SUPPORTED_MODEL_EXTENSIONS: Tuple[str, ...] = (".onnx", ".pt")
 
-# Primary recommended model for thesis demo (achieves ~6.0+ FPS on CPU with high precision)
-DEFAULT_MODEL_NAME: str = "yolov8n-drone-480.onnx"
+# The public/demo detector is intentionally restricted to this training batch.
+# Keeping the allowlist explicit prevents legacy checkpoints in models/ from
+# silently reappearing in the model selector after a restart.
+FRESH_TRAINED_MODEL_ALLOWLIST = frozenset({
+    "fresh_yolo26_img640_best.onnx",
+    "drone-yolov8n-fresh-480.pt",
+    "drone-yolov8n-fresh-640.pt",
+    "drone-yolo11n-fresh-480.pt",
+    "drone-yolo11n-fresh-640.pt",
+    "drone-yolo26n-fresh-480.pt",
+    "drone-yolo26n-fresh-640.pt",
+})
+
+# The fresh YOLOv8n 480 checkpoint has the strongest sampled detection coverage
+# on the user's indoor/outdoor videos; yolo26 remains available in the selector.
+DEFAULT_MODEL_NAME: str = "drone-yolov8n-fresh-480.pt"
 
 FALLBACK_MODEL_NAMES: List[str] = [
-    "yolov8n-drone-480.onnx",
-    "yolo26n-drone-480.onnx",
-    "yolo11n-drone-480.onnx",
-    "yolov8n-drone-640.onnx",
-    "yolo26n.pt",
+    "drone-yolo26n-fresh-640.pt",
+    "drone-yolo11n-fresh-640.pt",
+    "drone-yolov8n-fresh-640.pt",
+    "drone-yolo26n-fresh-480.pt",
+    "drone-yolo11n-fresh-480.pt",
+    "drone-yolov8n-fresh-480.pt",
 ]
 
 DEFAULT_CONF_THRESHOLD: float = 0.25

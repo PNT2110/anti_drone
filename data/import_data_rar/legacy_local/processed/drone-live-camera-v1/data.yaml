@@ -1,0 +1,5 @@
+path: /run/media/pnt/APP/anti_drone/data/processed/drone-live-camera-v1
+train: images/train
+val: /run/media/pnt/APP/anti_drone/data/processed/drone-single-class-v3-labelrepair-candidate/images/val
+names:
+  0: drone

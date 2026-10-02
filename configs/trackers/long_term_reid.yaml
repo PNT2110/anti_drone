@@ -1,0 +1,20 @@
+name: long_term_reid
+description: >-
+  Stream-local motion + appearance tracker. Keeps active tracks briefly and
+  retains a dormant appearance gallery for re-entry ID recovery.
+active_track_ttl_seconds: 4.0
+reid_memory_seconds: 60.0
+reid_match_threshold: 0.45
+reid_center_gate: 50.0
+min_new_track_confidence: 0.25
+gallery_update_threshold: 0.15
+video_detection_confidence: 0.15
+appearance_hue_saturation_min: 60
+appearance_hue_value_min: 32
+appearance_gallery_size: 12
+minimum_reid_crop_quality: 0.20
+reset_on_new_stream: true
+notes:
+  - IDs are stable within one continuous stream, not globally across restarts.
+  - A new ID is safer than a false identity match when the crop is tiny or blurred.
+  - For crowded scenes, benchmark BoT-SORT-ReID and Deep OC-SORT against this tracker.

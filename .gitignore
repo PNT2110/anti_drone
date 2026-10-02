@@ -1,13 +1,24 @@
-# Local dataset inputs and runtime state
-/data/
-/.runtime/
-
-# Generated models, checkpoints, experiments, and deployment bundles
-/artifacts/
-
-# Python caches and local environments
+# Python
 __pycache__/
 *.py[cod]
+.pytest_cache/
 .venv/
-*.egg-info/
+venv/
 
+# Runtime output of the web console
+*.log
+web/tmp/
+web/outputs/
+web/server.pid
+
+# Datasets stay on disk, not in git. Only the dataset descriptors are tracked.
+data/**
+!data/**/
+!data/**/data.yaml
+!data/**/.gitkeep
+
+# Large generated artifacts
+artifacts/video_tests/
+artifacts/**/*.tar.gz
+artifacts/**/*.tgz
+artifacts/models/**/*.pt

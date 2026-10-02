@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import threading
 import time
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Union
@@ -15,6 +16,16 @@ from typing import Optional, Union
 import cv2
 import numpy as np
 import ultralytics
+
+try:
+    from .tracker import IdentityTracker, create_tracker_from_env
+except ImportError:
+    from backend.tracker import IdentityTracker, create_tracker_from_env
+
+try:
+    import torch
+except ImportError:  # pragma: no cover - ultralytics normally brings torch
+    torch = None
 
 
 @dataclass
@@ -25,6 +36,7 @@ class DetectionResult:
     confidences: list[float] = field(default_factory=list)  # [0.94, 0.88, ...]
     class_ids: list[int] = field(default_factory=list)      # [0, 0, ...]
     class_names: list[str] = field(default_factory=list)    # ["drone", ...]
+    track_ids: list[int | None] = field(default_factory=list)
     inference_time_ms: float = 0.0                          # Latency in milliseconds
     annotated_frame: np.ndarray = field(
         default_factory=lambda: np.zeros((0, 0, 3), dtype=np.uint8)
@@ -51,14 +63,17 @@ class DetectionResult:
                     "confidence": round(float(conf), 4),
                     "class_id": int(cid),
                     "label": cname,
+                    "track_id": tid,
                 }
-                for b, conf, cid, cname in zip(
-                    self.boxes, self.confidences, self.class_ids, self.class_names
+                for b, conf, cid, cname, tid in zip(
+                    self.boxes, self.confidences, self.class_ids, self.class_names,
+                    self.track_ids or [None] * len(self.boxes),
                 )
             ],
             "total_detections": self.total_detections,
             "avg_confidence": round(self.avg_confidence, 4),
             "inference_time_ms": round(self.inference_time_ms, 2),
+            "track_ids": [tid for tid in self.track_ids if tid is not None],
         }
 
 
@@ -115,13 +130,18 @@ class YOLODetector:
         self,
         model_path: Union[str, Path],
         warmup: bool = True,
-        device: str = "cpu",
+        device: Optional[str] = None,
     ):
         self.model_path = Path(model_path).resolve()
         if not self.model_path.exists():
             raise FileNotFoundError(f"Model file does not exist: {self.model_path}")
 
-        self.device = device
+        requested_device = device or os.getenv("ANTI_DRONE_DEVICE", "auto")
+        if requested_device.lower() == "auto":
+            has_cuda = bool(torch is not None and torch.cuda.is_available())
+            requested_device = "cuda:0" if has_cuda else "cpu"
+        self.device = requested_device
+        self.use_half = self.device.startswith("cuda") and os.getenv("ANTI_DRONE_HALF", "1") == "1"
         self._lock = threading.Lock()
 
         # Load model with explicit task='detect'
@@ -142,6 +162,8 @@ class YOLODetector:
         )
 
         self.fps_tracker = FPSTracker(alpha=0.15)
+        self.identity_tracker = create_tracker_from_env()
+        self._tracking_lock = threading.Lock()
 
         if warmup:
             self._warmup()
@@ -155,6 +177,7 @@ class YOLODetector:
                 conf=0.25,
                 iou=0.45,
                 device=self.device,
+                half=self.use_half,
                 verbose=False,
             )
 
@@ -165,6 +188,9 @@ class YOLODetector:
         iou: float = 0.45,
         draw: bool = True,
         draw_fps: bool = False,
+        imgsz: Optional[int] = None,
+        tracker: IdentityTracker | None = None,
+        timestamp: float | None = None,
     ) -> DetectionResult:
         """
         Run object detection on an input BGR image frame.
@@ -199,6 +225,8 @@ class YOLODetector:
                 conf=conf_clamped,
                 iou=iou_clamped,
                 device=self.device,
+                half=self.use_half,
+                imgsz=imgsz or 640,
                 verbose=False,
             )
         inference_time_ms = (time.perf_counter() - t0) * 1000.0
@@ -216,6 +244,20 @@ class YOLODetector:
             class_ids = r_boxes.cls.cpu().numpy().astype(int).tolist()
             class_names = [self.names.get(cid, f"class_{cid}") for cid in class_ids]
 
+        tracker_timestamp = time.monotonic() if timestamp is None else float(timestamp)
+        if tracker is None:
+            with self._tracking_lock:
+                track_ids = self.identity_tracker.update(
+                    frame_bgr,
+                    boxes,
+                    confidences,
+                    tracker_timestamp,
+                )
+        else:
+            # Video tasks and camera sessions own their tracker instance. This
+            # avoids cross-stream ID resets/interleaving through one detector.
+            track_ids = tracker.update(frame_bgr, boxes, confidences, tracker_timestamp)
+
         annotated_frame = frame_bgr.copy()
         if draw:
             annotated_frame = self.draw_styled_detections(
@@ -224,6 +266,7 @@ class YOLODetector:
                 confidences=confidences,
                 class_ids=class_ids,
                 class_names=class_names,
+                track_ids=track_ids,
                 fps=fps if draw_fps else None,
             )
 
@@ -232,9 +275,16 @@ class YOLODetector:
             confidences=confidences,
             class_ids=class_ids,
             class_names=class_names,
+            track_ids=track_ids,
             inference_time_ms=inference_time_ms,
             annotated_frame=annotated_frame,
         )
+
+    def reset_tracking(self) -> None:
+        """Start a fresh stream without reloading the neural model."""
+
+        with self._tracking_lock:
+            self.identity_tracker.reset()
 
     def draw_styled_detections(
         self,
@@ -243,6 +293,7 @@ class YOLODetector:
         confidences: list[float],
         class_ids: list[int],
         class_names: list[str],
+        track_ids: list[int | None] | None = None,
         fps: Optional[float] = None,
     ) -> np.ndarray:
         """
@@ -252,9 +303,10 @@ class YOLODetector:
         img = frame.copy()
         h, w = img.shape[:2]
 
-        for (x1, y1, x2, y2), conf, cid, cname in zip(
+        for index, ((x1, y1, x2, y2), conf, cid, cname) in enumerate(zip(
             boxes, confidences, class_ids, class_names
-        ):
+        )):
+            track_id = track_ids[index] if track_ids and index < len(track_ids) else None
             ix1, iy1 = max(0, min(int(round(x1)), w - 1)), max(0, min(int(round(y1)), h - 1))
             ix2, iy2 = max(0, min(int(round(x2)), w - 1)), max(0, min(int(round(y2)), h - 1))
             if ix2 <= ix1 or iy2 <= iy1:
@@ -285,7 +337,8 @@ class YOLODetector:
             cv2.line(img, (ix2, iy2), (ix2, iy2 - clen), color, 3, cv2.LINE_AA)
 
             # 3. Confidence Badge & Label
-            label_text = f"{cname.upper()} {conf * 100:.1f}%"
+            identity = f"ID {track_id}" if track_id is not None else "ID ?"
+            label_text = f"{identity} · {cname.upper()} {conf * 100:.1f}%"
             font = cv2.FONT_HERSHEY_SIMPLEX
             font_scale = 0.52
             thickness = 1

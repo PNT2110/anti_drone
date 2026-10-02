@@ -1,0 +1,9 @@
+# Light dependencies for the API/tracker tests (no ultralytics, no GPU).
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.12
+jinja2>=3.1.4
+httpx>=0.27.0
+opencv-python-headless>=4.10.0
+numpy>=1.26.0
+pytest>=8.0.0

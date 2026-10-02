@@ -1,0 +1,8 @@
+# Canonical local dataset configuration.
+# Relative paths keep this file portable across Windows, Linux, and the SSH host.
+path: ../../data/data_train
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: drone

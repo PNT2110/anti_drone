@@ -1,0 +1,123 @@
+{
+  "model_id": "yolov8n",
+  "status": "HOST_VERIFIED_PI_HANDOFF",
+  "files": [
+    {
+      "path": "artifacts/deploy/yolov8n/SHA256SUMS",
+      "sha256": "70c0291348078396fddae43c3f7d2bf729503cfa7132f6ceeea725dcafd09194",
+      "size": 787
+    },
+    {
+      "path": "artifacts/deploy/yolov8n/metadata.json",
+      "sha256": "32f00a0361dbf482685440bc089f85df337bacf13c15b521d8dd8d07d8edc608",
+      "size": 1542
+    },
+    {
+      "path": "artifacts/deploy/yolov8n/ncnn/best_ncnn_model/metadata.yaml",
+      "sha256": "1c21a558f038deb2790692d51bb715f38ef9df9f64bb645f6ac47dc790e4cb8f",
+      "size": 438
+    },
+    {
+      "path": "artifacts/deploy/yolov8n/ncnn/best_ncnn_model/model.ncnn.bin",
+      "sha256": "c28f2cd199d3c867e438d5847d85715c9860aa93eea61a8f78ecbb4e325baaeb",
+      "size": 12124428
+    },
+    {
+      "path": "artifacts/deploy/yolov8n/ncnn/best_ncnn_model/model.ncnn.param",
+      "sha256": "47a0c16d6d929989db921482e302ba9e2a27295bfcc436fbaedd3e48299a5ea1",
+      "size": 16550
+    },
+    {
+      "path": "artifacts/deploy/yolov8n/ncnn/best_ncnn_model/model_ncnn.py",
+      "sha256": "44acb7080e64c9b475636af5e7c48d6e260aca363d76198298efb82e116c808e",
+      "size": 895
+    },
+    {
+      "path": "artifacts/deploy/yolov8n/onnx/best.onnx",
+      "sha256": "2a8491c8b3935596b94bf5e268292491d289bb51ac9065a28d0f8a562250097d",
+      "size": 12265319
+    },
+    {
+      "path": "artifacts/deploy/yolov8n/parity.json",
+      "sha256": "b6d155aaf10025e8525b61a352dc33c9f2a4b1d0db2219cdd45a28608228a24f",
+      "size": 2166
+    },
+    {
+      "path": "artifacts/deploy/yolov8n/tflite/model_float32.tflite",
+      "sha256": "edfaccbb87304a36d5cfd40997dec110bed48addef4c7516d14695e75cf6480f",
+      "size": 12192424
+    },
+    {
+      "path": "src/anti_drone/runtime.py",
+      "sha256": "16a7b21f9b754c2c6c55782a7a57dc6823f8eb7c6670ccb0fdc797864b59fab5",
+      "size": 12414
+    },
+    {
+      "path": "scripts/run_phase5.py",
+      "sha256": "64e892ea3441bc9284ac3ea277694e6ff16b915ce1593dd5260889d9d9a9eccc",
+      "size": 8212
+    },
+    {
+      "path": "scripts/benchmark_phase6.py",
+      "sha256": "5c0d0919fefadd11f634e685077279a0b05ceef778b6276150e6a6a0fc877840",
+      "size": 7402
+    },
+    {
+      "path": "scripts/promote_pi_release.py",
+      "sha256": "95a727dfa9bd587f614f000a0d11329bd14b608f95c6d9ef5fa646946a006857",
+      "size": 2604
+    },
+    {
+      "path": "requirements-pi.txt",
+      "sha256": "837a7f49ff0bb3c8c41607937fdc97ccf8f850d4203965c5b7bbb4a39a62c95d",
+      "size": 395
+    },
+    {
+      "path": "docs/PI5_HANDOFF.md",
+      "sha256": "2478bf9fc38807f918e3dc690262de629ea3512a06dc74d07e5717a67715e7f4",
+      "size": 2164
+    },
+    {
+      "path": ".runtime/parity-set/base__000000__RGBT_val_20190925_130434_1_6_visible_345.jpg",
+      "sha256": "df39d0f3f5eb8d606353f1b717b1a0079105afe97fde172ae82b565ca1977a6e",
+      "size": 79120
+    },
+    {
+      "path": ".runtime/parity-set/base__000001__RGBT_test_20190925_134301_1_1_infrared_755.jpg",
+      "sha256": "f6343278a34e3ab3030be72b4b7e7334ead641c3ae2ec399749ef0bfb831b9a6",
+      "size": 45333
+    },
+    {
+      "path": ".runtime/parity-set/base__000002__RGBT_val_20190925_101846_1_4_infrared_780.jpg",
+      "sha256": "f5ddda0fb9c3d86cb0aadf79f80b3c70c59128b86c96186da3b8fb5d5f4669bb",
+      "size": 28363
+    },
+    {
+      "path": ".runtime/parity-set/base__000003__RGBT_test_20190926_134054_1_2_infrared_480.jpg",
+      "sha256": "f5de63363a60da636ea27d3eda851ea80592f80a7baac70ad947b197b9d2abd0",
+      "size": 31484
+    },
+    {
+      "path": ".runtime/parity-set/base__000004__RGBT_test_20190925_111757_1_2_infrared_505.jpg",
+      "sha256": "33b744aaf346a9be530067ff10a1f438feefc36d9a61bed231bd1c5fad1b5db4",
+      "size": 53333
+    },
+    {
+      "path": ".runtime/parity-set/base__000005__DUT_train_03458.jpg",
+      "sha256": "fb125c8c68ec4ef1cf8155ea299310a8275d180554a00f6957ff7c6e3b96ae97",
+      "size": 178390
+    },
+    {
+      "path": ".runtime/parity-set/base__000006__RGBT_train_20190926_195921_1_7_visible_105.jpg",
+      "sha256": "d6ea6f3f5d42624d5eb0e77015e616719d839bc5f0b4d519eeddd275c230e959",
+      "size": 175540
+    },
+    {
+      "path": ".runtime/parity-set/base__000007__RGBT_train_20190925_152412_1_4_infrared_825.jpg",
+      "sha256": "d5bbc3e40daf8335f7ebf2fc0f0820037a8dda21564e4917e54cc307a2867877",
+      "size": 38350
+    }
+  ],
+  "created_unix": 1789918025.0185416,
+  "bundle_sha256": "890710e1d742224ac60760e3ecc0c013745b9592168b7f08469be62f6a1e59fe"
+}

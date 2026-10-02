@@ -13,7 +13,8 @@ httpx>=0.27.0
 ultralytics>=8.3.0
 opencv-python>=4.10.0
 numpy>=1.26.0
-onnxruntime>=1.19.0
+# GPU host: required for CUDAExecutionProvider (falls back to CPU if CUDA is unavailable)
+onnxruntime-gpu>=1.30.0
 
 # Testing
 pytest>=8.0.0

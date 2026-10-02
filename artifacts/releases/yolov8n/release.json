@@ -1,0 +1,189 @@
+{
+  "status": "RELEASE_CANDIDATE",
+  "model_id": "yolov8n",
+  "phase4": {
+    "status": "DONE",
+    "parity_status": "DONE",
+    "deployment": "/run/media/pnt/APP/anti_drone/artifacts/deploy/yolov8n"
+  },
+  "phase5": {
+    "replay": {
+      "onnx": "DONE",
+      "ncnn": "DONE",
+      "tflite": "DONE"
+    },
+    "camera": "BLOCKED",
+    "camera_reason": "No /dev/video0 was present on the current x86_64 host."
+  },
+  "phase6": {
+    "benchmarks": {
+      "onnx": "DONE_HOST_REFERENCE",
+      "ncnn": "DONE_HOST_REFERENCE",
+      "tflite": "DONE_HOST_REFERENCE"
+    },
+    "pi_acceptance": "BLOCKED: all measurements are host references, not Raspberry Pi 5 measurements."
+  },
+  "phase7": {
+    "status": "BASELINE_FROZEN_NO_NEW_BATCH",
+    "dataset": "/run/media/pnt/APP/anti_drone/data/processed/drone-single-class/manifest.json",
+    "dataset_manifest_sha256": "3626696d97126c0e8da925c4bf3d282168c8ed3615361f3f536ec614eb94317d",
+    "release_model": "yolov8n",
+    "release_checkpoint_sha256": "662fbc1c066041345970f4211a6ceb9209907a331fd1724c0b2be7e53a4beec1",
+    "incoming_batch_files": [],
+    "rule": "Dataset v1 remains unchanged; no v2 retrain is authorized without a reviewed incoming batch.",
+    "timestamp_unix": 1789918045.3276389
+  },
+  "pi_handoff_bundle": {
+    "path": "/run/media/pnt/APP/anti_drone/artifacts/releases/yolov8n/anti-drone-yolov8n-pi5.tar.gz",
+    "manifest": "/run/media/pnt/APP/anti_drone/artifacts/releases/yolov8n/PI5_BUNDLE_MANIFEST.json",
+    "status": "HOST_VERIFIED_PI_HANDOFF"
+  },
+  "host_reference": {
+    "onnx": {
+      "model_only_fps": 51.985986727268035,
+      "end_to_end_fps": 42.83113423465701,
+      "frames": 1000
+    },
+    "ncnn": {
+      "model_only_fps": 29.418956447514127,
+      "end_to_end_fps": 26.285101697675138,
+      "frames": 1000
+    },
+    "tflite": {
+      "model_only_fps": 39.76961560310844,
+      "end_to_end_fps": 34.258771408727405,
+      "frames": 1000
+    }
+  },
+  "platform": {
+    "machine": "x86_64",
+    "system": "Linux-7.0.0-31-generic-x86_64-with-glibc2.43"
+  },
+  "timestamp_unix": 1789918045.3336174,
+  "pi_validation": {
+    "camera_reports": {
+      "onnx": {
+        "path": ".runtime/pi-camera/onnx/camera_report.json",
+        "status": "DONE",
+        "mode": "camera",
+        "runtime": "onnx",
+        "frames": 11203,
+        "alerts": 374,
+        "capture_errors": [],
+        "duration_seconds": 1800.162701194,
+        "dropped_frames": 35044
+      },
+      "ncnn": {
+        "path": ".runtime/pi-camera/ncnn/camera_report.json",
+        "status": "DONE",
+        "mode": "camera",
+        "runtime": "ncnn",
+        "frames": 20949,
+        "alerts": 567,
+        "capture_errors": [],
+        "duration_seconds": 1800.0457872770003,
+        "dropped_frames": 25218
+      },
+      "tflite": {
+        "path": ".runtime/pi-camera/tflite/camera_report.json",
+        "status": "DONE",
+        "mode": "camera",
+        "runtime": "tflite",
+        "frames": 12770,
+        "alerts": 425,
+        "capture_errors": [],
+        "duration_seconds": 1800.1797439410002,
+        "dropped_frames": 18118
+      }
+    },
+    "run_id": "20260920-pi5",
+    "benchmarks": {
+      "onnx": {
+        "status": "DONE_PI",
+        "runtime": "onnx",
+        "model_only": {
+          "mean_ms": 140.91130618199395,
+          "p50_ms": 139.69538249989455,
+          "p95_ms": 144.77658424966648,
+          "p99_ms": 162.37341232008927,
+          "min_ms": 138.3902659999876,
+          "max_ms": 198.3363979998103
+        },
+        "end_to_end": {
+          "mean_ms": 147.625923338006,
+          "p50_ms": 146.24437249995026,
+          "p95_ms": 154.81260745020788,
+          "p99_ms": 169.8236836297201,
+          "min_ms": 144.39063500003613,
+          "max_ms": 214.02184599992324
+        },
+        "model_only_fps_mean": 7.096662624846088,
+        "end_to_end_fps_mean": 6.773878038414626,
+        "frames": 1000,
+        "warmup": 200,
+        "dropped_frames": 0,
+        "rss_bytes_peak": 251592704,
+        "temperature_c_max": 53.45,
+        "pi_acceptance": "eligible"
+      },
+      "ncnn": {
+        "status": "DONE_PI",
+        "runtime": "ncnn",
+        "model_only": {
+          "mean_ms": 70.44422234999729,
+          "p50_ms": 69.64213499986727,
+          "p95_ms": 73.78121315045973,
+          "p99_ms": 85.3146622004715,
+          "min_ms": 68.25095299973327,
+          "max_ms": 130.49959299951297
+        },
+        "end_to_end": {
+          "mean_ms": 77.79158941501099,
+          "p50_ms": 76.9594620001044,
+          "p95_ms": 81.12844140014202,
+          "p99_ms": 89.7641114806447,
+          "min_ms": 75.77418300024874,
+          "max_ms": 138.63743399997475
+        },
+        "model_only_fps_mean": 14.195628351627882,
+        "end_to_end_fps_mean": 12.85486011431251,
+        "frames": 1000,
+        "warmup": 200,
+        "dropped_frames": 0,
+        "rss_bytes_peak": 211615744,
+        "temperature_c_max": 47.4,
+        "pi_acceptance": "eligible"
+      },
+      "tflite": {
+        "status": "DONE_PI",
+        "runtime": "tflite",
+        "model_only": {
+          "mean_ms": 128.82277962798526,
+          "p50_ms": 128.32783449994167,
+          "p95_ms": 131.30419284966592,
+          "p99_ms": 138.09875639030906,
+          "min_ms": 127.14011099978961,
+          "max_ms": 157.3903500002416
+        },
+        "end_to_end": {
+          "mean_ms": 136.01351788199008,
+          "p50_ms": 135.5135584999516,
+          "p95_ms": 138.79459850004423,
+          "p99_ms": 145.6925521703215,
+          "min_ms": 133.99981899965496,
+          "max_ms": 167.92278899993107
+        },
+        "model_only_fps_mean": 7.762602257828953,
+        "end_to_end_fps_mean": 7.3522103947611575,
+        "frames": 1000,
+        "warmup": 200,
+        "dropped_frames": 0,
+        "rss_bytes_peak": 296157184,
+        "temperature_c_max": 52.35,
+        "pi_acceptance": "eligible"
+      }
+    },
+    "promoted_at_unix": 1789925354.7844303,
+    "machine": "aarch64"
+  }
+}

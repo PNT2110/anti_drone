@@ -1,0 +1,6 @@
+# No absolute `path:` - Ultralytics resolves the splits relative to this file.
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: drone

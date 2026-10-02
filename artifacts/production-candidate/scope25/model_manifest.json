@@ -1,0 +1,71 @@
+{
+  "candidate_id": "scope18-yolov8n-480:ncnn",
+  "model_family": "yolov8n",
+  "training_run": "scope18-yolov8n-480",
+  "best_epoch": 82,
+  "training_imgsz": 480,
+  "deployment_imgsz": 480,
+  "source_best_pt_sha256": "359ddd23b283cd0eca15927b13b93c6045236f01bcf2bcd574b21f8b16b2ba3e",
+  "ncnn_param_sha256": "8d1a2d62f65c5a44f138dd2a2da43fa87246ecb6948f9a020b7cc86a46d095c5",
+  "ncnn_bin_sha256": "23092b6c934f9863efd68ab5e5343e8cc84e7acfb97db8c68b963ba6ee28cfd7",
+  "dataset_manifest_sha256": "bf814c1899d0ed006ac6f27bec465bdb1e32e5bdd3962983e740345991076c45",
+  "split_registry_sha256": "c922808e726e378c5a7c10273523b8a4e2cd3a134aff6b45973f70ab1703f3b1",
+  "class_count": 1,
+  "class_names": [
+    "drone"
+  ],
+  "class_id": 0,
+  "confidence_threshold": 0.25,
+  "nms_iou": 0.7,
+  "preprocess": {
+    "contract_version": "scope25-preprocess-v1",
+    "input_color": "OpenCV BGR",
+    "color_conversion": "BGR_to_RGB",
+    "letterbox": {
+      "rect": false,
+      "target_width": 480,
+      "target_height": 480,
+      "padding": 114,
+      "interpolation": "INTER_LINEAR"
+    },
+    "dtype": "float32",
+    "normalization": "divide_by_255",
+    "tensor_layout": "NCHW",
+    "batch": 1
+  },
+  "postprocess": {
+    "contract_version": "scope25-postprocess-v1",
+    "raw_output": "[1,5,N]",
+    "interpretation": "xywh_plus_single_class_confidence",
+    "class_id": 0,
+    "confidence_threshold": 0.25,
+    "nms_iou": 0.7,
+    "external_nms": "exactly_once"
+  },
+  "backend": "NCNN",
+  "backend_version": "1.0.20260526",
+  "threads": 4,
+  "precision": "FP32",
+  "pi_hardware": "Raspberry Pi 5 Model B Rev 1.0",
+  "frozen_val_metrics": {
+    "map50_95": 0.62836,
+    "recall": 0.98689
+  },
+  "scope21_pi_benchmark_reference": {
+    "status": "PI_BENCHMARK_PASS",
+    "fps": 22.493,
+    "model_bytes": 12147894
+  },
+  "scope25r_reproduction_reference": {
+    "status": "PI_REPRODUCTION_PASS",
+    "evidence_sha256": "ee2e5dc531f251a25bc4b7c5adffa2b48c4692837d695b0349d93d87c4aee657",
+    "images": 8,
+    "warmup_passes": 20,
+    "measured_passes": 20,
+    "max_confidence_abs": 0.0012343525886535645,
+    "min_bbox_iou": 0.9717433386953696
+  },
+  "int8_status": "PTQ_INT8_PATHS_EXHAUSTED_FOR_CURRENT_SCOPE",
+  "freeze_timestamp": "2026-09-25T18:57:48.773064+00:00",
+  "test_accessed": false
+}

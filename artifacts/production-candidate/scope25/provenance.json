@@ -1,0 +1,13 @@
+{
+  "candidate_id": "scope18-yolov8n-480:ncnn",
+  "source_best_pt": "/run/media/pnt/APP/anti_drone/artifacts/experiments/scope18-v3-labelrepair/scope18-yolov8n-480/attempt-batch16/weights/best.pt",
+  "source_ncnn_dir": "/run/media/pnt/APP/anti_drone/artifacts/exports/scope19/scope18-yolov8n-480/float32/ncnn/model_ncnn_model",
+  "scope20_parity": "PARITY_PASS",
+  "scope21_pi_benchmark": "PI_BENCHMARK_PASS",
+  "scope25r_route": "LAN SSH 192.168.1.118",
+  "scope25r_workspace": "/home/pitan/antidrone-scope25-smoke",
+  "scope25r_evidence": "/run/media/pnt/APP/anti_drone/.runtime/scope25/pi_smoke_result.json",
+  "source_artifacts_regenerated": false,
+  "test_accessed": false,
+  "freeze_timestamp": "2026-09-25T18:57:48.773064+00:00"
+}

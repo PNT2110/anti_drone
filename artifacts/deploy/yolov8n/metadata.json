@@ -1,0 +1,47 @@
+{
+  "status": "DONE",
+  "model_id": "yolov8n",
+  "checkpoint": "/run/media/pnt/APP/anti_drone/artifacts/experiments/drone-single-class/yolov8n/baseline-640-s42-drop01-2/weights/best.pt",
+  "checkpoint_sha256": "662fbc1c066041345970f4211a6ceb9209907a331fd1724c0b2be7e53a4beec1",
+  "input": {
+    "width": 640,
+    "height": 640,
+    "layout": "NCHW",
+    "dtype": "float32",
+    "color": "RGB",
+    "normalization": "pixel / 255.0",
+    "letterbox": true
+  },
+  "class_map": {
+    "0": "drone"
+  },
+  "threshold": {
+    "confidence": 0.25,
+    "nms_iou": 0.7
+  },
+  "profiles": {
+    "onnx": {
+      "path": "/run/media/pnt/APP/anti_drone/artifacts/deploy/yolov8n/onnx/best.onnx",
+      "sha256": "2a8491c8b3935596b94bf5e268292491d289bb51ac9065a28d0f8a562250097d"
+    },
+    "ncnn": {
+      "path": "/run/media/pnt/APP/anti_drone/artifacts/deploy/yolov8n/ncnn/best_ncnn_model",
+      "sha256": "9e4d4d9d6f2982cbcd71b3b9f2a1d77acb1fb3f00702d423b9b438bdf5e5cc29"
+    },
+    "tflite": {
+      "path": "/run/media/pnt/APP/anti_drone/artifacts/deploy/yolov8n/tflite/model_float32.tflite",
+      "sha256": "edfaccbb87304a36d5cfd40997dec110bed48addef4c7516d14695e75cf6480f"
+    }
+  },
+  "exporter": {
+    "ultralytics": "8.4.125",
+    "python": "3.12.14",
+    "git": "8e21b637f9d8035725dea3f026890709ec52dd0f",
+    "timestamp_unix": 1789916930.2652006
+  },
+  "representative_set": {
+    "path": "/run/media/pnt/APP/anti_drone/.runtime/parity-set",
+    "count": 8,
+    "sha256": "d3dc0be41d7030716d1715feb6f8bae3d37331d7724ba77023953be21ce628df"
+  }
+}

@@ -1,7 +1,10 @@
 import os
+import sys
 import cv2
 import json
+import atexit
 import base64
+import binascii
 import uuid
 import time
 import asyncio
@@ -12,6 +15,22 @@ from fastapi import FastAPI, UploadFile, File, Form, WebSocket, WebSocketDisconn
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
+from backend.config import (
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    MAX_UPLOAD_SIZE_BYTES,
+    SUPPORTED_VIDEO_EXTENSIONS,
+)
+from backend.tracker import IdentityTracker, create_tracker_from_env
+from security import BasicAuthMiddleware, get_password, is_loopback
+
+# Log lines contain Vietnamese. When output is redirected (start.bat writes to
+# server.log) Windows falls back to a legacy code page and print() would raise.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 # Ensure dirs exist
 WEB_DIR = Path(__file__).parent
@@ -23,6 +42,7 @@ STATIC_DIR.mkdir(exist_ok=True)
 (STATIC_DIR / "js").mkdir(exist_ok=True)
 TEMPLATES_DIR = WEB_DIR / "templates"
 TEMPLATES_DIR.mkdir(exist_ok=True)
+PID_FILE = WEB_DIR / "server.pid"
 
 # Load backend
 try:
@@ -34,14 +54,58 @@ except Exception as e:
     manager = None
 
 app = FastAPI(title="Hệ Thống Phát Hiện Drone")
+app.add_middleware(BasicAuthMiddleware)
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 from jinja2 import Environment, FileSystemLoader
 _jinja_env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), auto_reload=True)
 
-# Video processing tasks
+# Video processing tasks.  Worker threads and request handlers both touch this
+# registry, so every access goes through video_tasks_lock.
 video_tasks = {}
+video_tasks_lock = threading.Lock()
+ACTIVE_TASK_STATES = ("queued", "processing")
+UPLOAD_CHUNK_BYTES = 1024 * 1024
+NO_MODEL_MESSAGE = "Chưa nạp được mô hình. Kiểm tra thư mục models/ và log server."
+
+
+def no_model_response() -> JSONResponse:
+    return JSONResponse({"status": "error", "error": NO_MODEL_MESSAGE, "message": NO_MODEL_MESSAGE}, status_code=503)
+
+
+def reset_tracking() -> None:
+    """Reset only stream identity state; keep the loaded model warm."""
+
+    if manager is not None and hasattr(manager, "_active_detector"):
+        detector = manager._active_detector
+        if detector is not None and hasattr(detector, "reset_tracking"):
+            detector.reset_tracking()
+
+
+def create_stream_tracker() -> IdentityTracker:
+    """Create isolated ID memory for one uploaded video or camera connection."""
+
+    return create_tracker_from_env()
+
+
+def encode_jpeg(frame: np.ndarray, quality: int = 80) -> bytes:
+    ok, buffer = cv2.imencode(
+        ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, int(max(40, min(95, quality)))]
+    )
+    if not ok:
+        return b""
+    return buffer.tobytes()
+
+
+@app.middleware("http")
+async def reject_oversize_upload(request: Request, call_next):
+    # Refuse before the multipart body is received and spooled to disk.
+    if request.url.path == "/api/video/upload":
+        declared = request.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > MAX_UPLOAD_SIZE_BYTES + UPLOAD_CHUNK_BYTES:
+            return JSONResponse({"error": "Video vượt quá dung lượng cho phép."}, status_code=413)
+    return await call_next(request)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -79,22 +143,33 @@ async def get_models():
 @app.post("/api/models/switch")
 async def switch_model(model_name: str = Form(...)):
     if manager is None:
-        return {"status": "error", "message": "No model manager"}
+        return no_model_response()
     try:
-        manager.set_active_model(model_name)
+        # Loading and warming a model can take seconds; keep the event loop free.
+        await asyncio.to_thread(manager.set_active_model, model_name)
         return {"status": "success", "model": model_name}
+    except KeyError:
+        # ModelNotFoundError derives from KeyError.
+        return JSONResponse(
+            {"status": "error", "message": f"Không tìm thấy mô hình '{model_name}'."},
+            status_code=404,
+        )
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
 
 @app.post("/api/detect")
 async def detect_image(file: UploadFile = File(...)):
+    if manager is None:
+        return no_model_response()
     contents = await file.read()
     nparr = np.frombuffer(contents, np.uint8)
-    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    # cv2.imdecode raises on an empty buffer instead of returning None.
+    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR) if nparr.size else None
     if frame is None:
         return JSONResponse({"error": "Không đọc được ảnh"}, status_code=400)
-    result = manager.predict(frame)
+    # A still image is its own stream: IDs must not leak between requests.
+    result = await asyncio.to_thread(manager.predict, frame, tracker=create_stream_tracker())
     # Return annotated image as base64
     _, buf = cv2.imencode('.jpg', result.annotated_frame)
     b64 = base64.b64encode(buf).decode('utf-8')
@@ -103,76 +178,224 @@ async def detect_image(file: UploadFile = File(...)):
     return resp
 
 
+def update_video_task(task_id: str, **fields) -> None:
+    with video_tasks_lock:
+        task = video_tasks.get(task_id)
+        if task is not None:
+            task.update(fields)
+
+
+def prune_video_tasks(now: float | None = None) -> None:
+    """Drop finished tasks and temp videos older than the retention window."""
+
+    now = time.time() if now is None else now
+    ttl = float(os.getenv("ANTI_DRONE_VIDEO_TTL_SECONDS", "3600"))
+    with video_tasks_lock:
+        expired = [
+            task_id
+            for task_id, task in video_tasks.items()
+            if task.get('status') not in ACTIVE_TASK_STATES
+            and now - task.get('finished_at', now) > ttl
+        ]
+        for task_id in expired:
+            del video_tasks[task_id]
+        live_ids = set(video_tasks)
+
+    for pattern in ("*_in.*", "*_out.mp4"):
+        for path in TMP_DIR.glob(pattern):
+            if path.name.split("_", 1)[0] in live_ids:
+                continue
+            try:
+                if now - path.stat().st_mtime > ttl:
+                    path.unlink()
+            except OSError:
+                pass
+
+
 def process_video_task(task_id: str, input_path: str, output_path: str):
-    """Process video in background thread."""
-    cap = cv2.VideoCapture(input_path)
-    if not cap.isOpened():
-        video_tasks[task_id]['status'] = 'error'
-        video_tasks[task_id]['message'] = 'Không mở được video'
-        return
+    """Process and stream a video in source-time order, not all-at-once."""
+    cap = None
+    out = None
+    seen_ids = set()
+    try:
+        if manager is None:
+            raise RuntimeError(NO_MODEL_MESSAGE)
+        cap = cv2.VideoCapture(input_path)
+        if not cap.isOpened():
+            raise RuntimeError('Không mở được video')
 
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+        if not out.isOpened():
+            raise RuntimeError('Không tạo được video kết quả')
 
-    video_tasks[task_id].update({
-        'status': 'processing',
-        'total_frames': total_frames,
-        'processed_frames': 0,
-        'fps_video': fps,
-    })
+        stream_tracker = create_stream_tracker()
+        frame_interval = 1.0 / max(float(fps), 1.0)
+        next_frame_deadline = time.perf_counter()
 
-    frame_idx = 0
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
+        update_video_task(
+            task_id,
+            status='processing',
+            total_frames=total_frames,
+            processed_frames=0,
+            fps_video=fps,
+            frame_seq=0,
+            unique_track_ids=[],
+            detection_observations=0,
+        )
 
-        t0 = time.time()
-        result = manager.predict(frame)
-        dt = (time.time() - t0) * 1000
+        frame_idx = 0
+        frame_seq = 0
+        detection_observations = 0
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-        annotated = result.annotated_frame
-        if annotated is not None and annotated.size > 0:
-            out.write(annotated)
-            _, buffer = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            video_tasks[task_id]['frame'] = buffer.tobytes()
+            t0 = time.perf_counter()
+            result = manager.predict(
+                frame,
+                  # Let weak detections participate in track continuation, but
+                  # decide separately which unmatched boxes are safe to display.
+                  draw=False,
+                  # Keep weak detections available to continue a known small FPV
+                  # track; the tracker requires >=0.25 confidence to create a new ID.
+                  conf=float(os.getenv("ANTI_DRONE_VIDEO_MIN_CONFIDENCE", "0.10")),
+                  # FPV drones occupy very few pixels in these source videos; 960
+                  # improves small-object recall and gives the tracker more
+                  # continuous observations while remaining real-time on the server.
+                  imgsz=960,
+                tracker=stream_tracker,
+                timestamp=frame_idx / max(float(fps), 1.0),
+            )
+            dt = (time.perf_counter() - t0) * 1000.0
 
-        frame_idx += 1
-        video_tasks[task_id].update({
-            'processed_frames': frame_idx,
-            'stats': {
-                'total_detections': result.total_detections,
-                'avg_confidence': round(result.avg_confidence, 4),
-                'inference_time_ms': round(dt, 1),
-                'fps': round(1000 / dt, 1) if dt > 0 else 0,
-                'progress': round(frame_idx / max(total_frames, 1) * 100, 1),
+            min_visible_confidence = float(
+                os.getenv("ANTI_DRONE_NEW_TRACK_MIN_CONFIDENCE", "0.25")
+            )
+            visible_indices = [
+                index
+                for index, (confidence, track_id) in enumerate(
+                    zip(result.confidences, result.track_ids)
+                )
+                if track_id is not None or confidence >= min_visible_confidence
+            ]
+            detector = getattr(manager, "_active_detector", None)
+            if detector is not None and hasattr(detector, "draw_styled_detections"):
+                annotated = detector.draw_styled_detections(
+                    frame=frame,
+                    boxes=[result.boxes[index] for index in visible_indices],
+                    confidences=[result.confidences[index] for index in visible_indices],
+                    class_ids=[result.class_ids[index] for index in visible_indices],
+                    class_names=[result.class_names[index] for index in visible_indices],
+                    track_ids=[result.track_ids[index] for index in visible_indices],
+                )
+            else:
+                annotated = result.annotated_frame
+
+            frame_idx += 1
+            seen_ids.update(track_id for track_id in result.track_ids if track_id is not None)
+            detection_observations += result.total_detections
+            fields = {
+                'processed_frames': frame_idx,
+                'unique_track_ids': sorted(seen_ids),
+                'detection_observations': detection_observations,
+                'stats': {
+                    'total_detections': result.total_detections,
+                    'avg_confidence': round(result.avg_confidence, 4),
+                    'inference_time_ms': round(dt, 1),
+                    # This is the paced output rate, not raw inference throughput.
+                    # The UI must tell the truth about real-time playback.
+                    'fps': round(float(fps), 1),
+                    'progress': round(frame_idx / max(total_frames, 1) * 100, 1),
+                    'track_ids': [int(track_id) for track_id in result.track_ids if track_id is not None],
+                },
             }
-        })
+            if annotated is not None and annotated.size > 0:
+                out.write(annotated)
+                frame_seq += 1
+                fields['frame'] = encode_jpeg(annotated, 82)
+                fields['frame_seq'] = frame_seq
+            update_video_task(task_id, **fields)
 
-    cap.release()
-    out.release()
-    video_tasks[task_id]['status'] = 'completed'
+            # Pace playback to the source video.  This makes the web preview a
+            # live processing view instead of a benchmark that jumps to the end.
+            next_frame_deadline += frame_interval
+            delay = next_frame_deadline - time.perf_counter()
+            if delay > 0:
+                time.sleep(delay)
+            elif delay < -frame_interval * 3:
+                next_frame_deadline = time.perf_counter()
+
+        # Release the writer before announcing completion so the download is whole.
+        out.release()
+        out = None
+        update_video_task(task_id, status='completed', finished_at=time.time())
+    except Exception as e:
+        print(f"[Video task {task_id} error] {e}")
+        update_video_task(task_id, status='error', message=str(e), finished_at=time.time())
+    finally:
+        if cap is not None:
+            cap.release()
+        if out is not None:
+            out.release()
 
 
 @app.post("/api/video/upload")
 async def upload_video(file: UploadFile = File(...)):
-    task_id = str(uuid.uuid4())[:8]
-    input_path = str(TMP_DIR / f"{task_id}_in.mp4")
-    output_path = str(TMP_DIR / f"{task_id}_out.mp4")
+    if manager is None:
+        return no_model_response()
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in SUPPORTED_VIDEO_EXTENSIONS:
+        allowed = ", ".join(sorted(SUPPORTED_VIDEO_EXTENSIONS))
+        return JSONResponse({"error": f"Định dạng không hỗ trợ. Chấp nhận: {allowed}"}, status_code=400)
 
-    content = await file.read()
-    with open(input_path, "wb") as f:
-        f.write(content)
+    prune_video_tasks()
+    task_id = uuid.uuid4().hex
+    max_tasks = int(os.getenv("ANTI_DRONE_MAX_VIDEO_TASKS", "2"))
+    with video_tasks_lock:
+        active = sum(1 for task in video_tasks.values() if task.get('status') in ACTIVE_TASK_STATES)
+        if active >= max_tasks:
+            return JSONResponse(
+                {"error": "Server đang xử lý tối đa số video cho phép. Thử lại sau."},
+                status_code=429,
+            )
+        # Reserve the slot before the (slow) write so concurrent uploads cannot overshoot.
+        video_tasks[task_id] = {'status': 'queued', 'frame': None, 'frame_seq': 0, 'stats': {}}
 
-    video_tasks[task_id] = {'status': 'queued', 'frame': None, 'stats': {}}
+    input_path = TMP_DIR / f"{task_id}_in{suffix}"
+    output_path = TMP_DIR / f"{task_id}_out.mp4"
+    written = 0
+    rejection = None
+    try:
+        with open(input_path, "wb") as f:
+            while True:
+                chunk = await file.read(UPLOAD_CHUNK_BYTES)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > MAX_UPLOAD_SIZE_BYTES:
+                    rejection = JSONResponse({"error": "Video vượt quá dung lượng cho phép."}, status_code=413)
+                    break
+                f.write(chunk)
+        if rejection is None and written == 0:
+            rejection = JSONResponse({"error": "Tệp video rỗng."}, status_code=400)
+    except Exception:
+        rejection = JSONResponse({"error": "Không lưu được video."}, status_code=500)
+
+    if rejection is not None:
+        with video_tasks_lock:
+            video_tasks.pop(task_id, None)
+        input_path.unlink(missing_ok=True)
+        return rejection
 
     # Run in background thread
-    t = threading.Thread(target=process_video_task, args=(task_id, input_path, output_path), daemon=True)
+    t = threading.Thread(target=process_video_task, args=(task_id, str(input_path), str(output_path)), daemon=True)
     t.start()
 
     return {"task_id": task_id, "filename": file.filename}
@@ -181,20 +404,27 @@ async def upload_video(file: UploadFile = File(...)):
 @app.get("/api/video/stream/{task_id}")
 async def video_stream(task_id: str):
     """MJPEG stream of processed video frames."""
+    with video_tasks_lock:
+        if task_id not in video_tasks:
+            return JSONResponse({"status": "not_found"}, status_code=404)
+
     async def generate():
+        last_frame_seq = -1
         while True:
-            if task_id not in video_tasks:
-                break
+            with video_tasks_lock:
+                task = video_tasks.get(task_id)
+                if task is None:
+                    break
+                frame_bytes = task.get('frame')
+                frame_seq = task.get('frame_seq', 0)
+                status = task.get('status')
 
-            task = video_tasks[task_id]
-            frame_bytes = task.get('frame')
-
-            if frame_bytes:
+            if frame_bytes and frame_seq != last_frame_seq:
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-                task['frame'] = None  # Consume frame
+                last_frame_seq = frame_seq
 
-            if task['status'] == 'completed':
+            if status in ('completed', 'error'):
                 # Send last frame one more time
                 if frame_bytes:
                     yield (b'--frame\r\n'
@@ -208,21 +438,32 @@ async def video_stream(task_id: str):
 
 @app.get("/api/video/stats/{task_id}")
 async def video_stats(task_id: str):
-    if task_id in video_tasks:
-        task = video_tasks[task_id]
+    with video_tasks_lock:
+        task = video_tasks.get(task_id)
+        if task is None:
+            return JSONResponse({"status": "not_found"}, status_code=404)
+        stats = dict(task.get('stats', {}))
         return {
             "status": task.get('status', 'unknown'),
-            **task.get('stats', {}),
+            **stats,
+            "message": task.get('message'),
             "processed_frames": task.get('processed_frames', 0),
             "total_frames": task.get('total_frames', 0),
+            "track_ids": stats.get('track_ids', []),
+            "unique_track_ids": list(task.get('unique_track_ids', [])),
+            "detection_observations": task.get('detection_observations', 0),
         }
-    return {"status": "not_found"}
 
 
 @app.get("/api/video/download/{task_id}")
 async def download_video(task_id: str):
+    # Only serve outputs of known, finished tasks; never build a path from an
+    # arbitrary client-supplied id.
+    with video_tasks_lock:
+        task = video_tasks.get(task_id)
+        ready = task is not None and task.get('status') == 'completed'
     output_path = TMP_DIR / f"{task_id}_out.mp4"
-    if output_path.exists():
+    if ready and output_path.exists():
         return FileResponse(
             path=str(output_path),
             filename=f"drone_detect_{task_id}.mp4",
@@ -231,29 +472,50 @@ async def download_video(task_id: str):
     return JSONResponse({"error": "File chưa sẵn sàng"}, status_code=404)
 
 
+async def reject_websocket_without_model(websocket: WebSocket) -> bool:
+    if manager is not None:
+        return False
+    await websocket.send_text(json.dumps({"error": NO_MODEL_MESSAGE}))
+    await websocket.close(code=1011)
+    return True
+
+
 @app.websocket("/ws/webcam")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    if await reject_websocket_without_model(websocket):
+        return
+    stream_tracker = create_stream_tracker()
     try:
         while True:
             data = await websocket.receive_text()
             if not data.startswith("data:image"):
                 continue
 
-            # Decode base64 image
-            _, encoded = data.split(",", 1)
-            img_data = base64.b64decode(encoded)
+            # Decode base64 image; one corrupt frame must not end the session.
+            try:
+                _, encoded = data.split(",", 1)
+                img_data = base64.b64decode(encoded)
+            except (ValueError, binascii.Error):
+                continue
             nparr = np.frombuffer(img_data, np.uint8)
-            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR) if nparr.size else None
 
             if frame is None:
                 continue
 
             t0 = time.time()
-            result = manager.predict(frame)
+            # Webcam prioritizes responsiveness: the detector receives a smaller
+            # inference canvas while the browser still displays the full result.
+            result = await asyncio.to_thread(
+                manager.predict,
+                frame,
+                imgsz=480,
+                tracker=stream_tracker,
+            )
             dt = (time.time() - t0) * 1000
 
-            _, buffer = cv2.imencode('.jpg', result.annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            _, buffer = cv2.imencode('.jpg', result.annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
             b64_img = base64.b64encode(buffer).decode('utf-8')
 
             response = {
@@ -263,6 +525,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     "avg_confidence": round(result.avg_confidence, 4),
                     "inference_time_ms": round(dt, 1),
                     "fps": round(1000 / dt, 1) if dt > 0 else 0,
+                    "track_ids": [int(track_id) for track_id in result.track_ids if track_id is not None],
                 }
             }
             await websocket.send_text(json.dumps(response))
@@ -272,9 +535,84 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"[WS Error] {e}")
 
 
+@app.websocket("/ws/camera")
+async def server_camera_endpoint(websocket: WebSocket):
+    """Capture the USB camera attached to the inference server.
+
+    The browser never asks for camera permission.  This is required when the
+    web page is opened by IP over HTTP, where getUserMedia is blocked by the
+    browser's secure-context policy.
+    """
+
+    await websocket.accept()
+    if await reject_websocket_without_model(websocket):
+        return
+    camera_index = int(os.getenv("ANTI_DRONE_CAMERA_INDEX", "0"))
+    cap = cv2.VideoCapture(camera_index)
+    if not cap.isOpened():
+        await websocket.send_text(json.dumps({
+            "error": f"Không mở được camera server index={camera_index}. Kiểm tra USB hoặc ANTI_DRONE_CAMERA_INDEX."
+        }))
+        await websocket.close(code=1011)
+        return
+
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(os.getenv("ANTI_DRONE_CAMERA_WIDTH", "1280")))
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(os.getenv("ANTI_DRONE_CAMERA_HEIGHT", "720")))
+    stream_tracker = create_stream_tracker()
+    target_fps = max(1.0, float(os.getenv("ANTI_DRONE_CAMERA_FPS", "15")))
+    frame_interval = 1.0 / target_fps
+    try:
+        while True:
+            started = time.perf_counter()
+            ok, frame = await asyncio.to_thread(cap.read)
+            if not ok:
+                await websocket.send_text(json.dumps({"error": "Camera server không trả frame."}))
+                break
+            t0 = time.perf_counter()
+            result = await asyncio.to_thread(
+                manager.predict,
+                frame,
+                imgsz=640,
+                tracker=stream_tracker,
+            )
+            inference_ms = (time.perf_counter() - t0) * 1000.0
+            encoded = await asyncio.to_thread(encode_jpeg, result.annotated_frame, 82)
+            b64_img = base64.b64encode(encoded).decode("ascii")
+            await websocket.send_text(json.dumps({
+                "image": f"data:image/jpeg;base64,{b64_img}",
+                "stats": {
+                    "total_detections": result.total_detections,
+                    "avg_confidence": round(result.avg_confidence, 4),
+                    "inference_time_ms": round(inference_ms, 1),
+                    "fps": round(1.0 / max(time.perf_counter() - started, 1e-6), 1),
+                    "track_ids": [int(track_id) for track_id in result.track_ids if track_id is not None],
+                },
+            }))
+            delay = frame_interval - (time.perf_counter() - started)
+            if delay > 0:
+                await asyncio.sleep(delay)
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print(f"[Server camera error] {e}")
+    finally:
+        cap.release()
+
+
 if __name__ == "__main__":
+    if not is_loopback(DEFAULT_HOST) and get_password() is None:
+        raise SystemExit(
+            f"Từ chối chạy trên {DEFAULT_HOST} khi chưa đặt mật khẩu. "
+            "Đặt ANTI_DRONE_PASSWORD, hoặc dùng ANTI_DRONE_HOST=127.0.0.1."
+        )
+    # stop.bat reads this to stop only this server, not every python.exe.
+    PID_FILE.write_text(str(os.getpid()), encoding="ascii")
+    atexit.register(lambda: PID_FILE.unlink(missing_ok=True))
     print("=" * 50)
     print("  HỆ THỐNG PHÁT HIỆN DRONE")
-    print("  http://localhost:8000")
+    print(f"  http://{DEFAULT_HOST}:{DEFAULT_PORT}")
+    print(f"  Mật khẩu: {'đã bật' if get_password() else 'TẮT (chỉ truy cập nội bộ)'}")
     print("=" * 50)
-    uvicorn.run("app:app", host="0.0.0.0", port=8000)
+    # Pass the object: "app:app" would import this module a second time and
+    # load the model twice.
+    uvicorn.run(app, host=DEFAULT_HOST, port=DEFAULT_PORT)

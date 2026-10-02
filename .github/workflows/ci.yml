@@ -5,10 +5,18 @@ on:
   pull_request:
 
 jobs:
-  structure:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify Python package layout
-        run: python -m compileall -q src
-
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The API and tracker tests use a fake inference manager, so the heavy
+      # ultralytics/torch stack is intentionally not installed here.
+      - name: Install test dependencies
+        run: pip install -r web/requirements-test.txt
+      - name: Compile sources
+        run: python -m compileall -q web scripts
+      - name: Run tests
+        run: python -m pytest web/tests/test_tracker_long_term_reid.py web/tests/test_app_api.py -q

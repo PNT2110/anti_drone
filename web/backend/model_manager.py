@@ -19,6 +19,7 @@ try:
         DEFAULT_CONF_THRESHOLD,
         DEFAULT_IOU_THRESHOLD,
         DEFAULT_MODEL_NAME,
+        FRESH_TRAINED_MODEL_ALLOWLIST,
         FALLBACK_MODEL_NAMES,
         KNOWN_MODELS_METADATA,
         MODEL_SEARCH_DIRS,
@@ -34,6 +35,7 @@ except (ImportError, ValueError):
             DEFAULT_CONF_THRESHOLD,
             DEFAULT_IOU_THRESHOLD,
             DEFAULT_MODEL_NAME,
+            FRESH_TRAINED_MODEL_ALLOWLIST,
             FALLBACK_MODEL_NAMES,
             KNOWN_MODELS_METADATA,
             MODEL_SEARCH_DIRS,
@@ -48,6 +50,7 @@ except (ImportError, ValueError):
             DEFAULT_CONF_THRESHOLD,
             DEFAULT_IOU_THRESHOLD,
             DEFAULT_MODEL_NAME,
+            FRESH_TRAINED_MODEL_ALLOWLIST,
             FALLBACK_MODEL_NAMES,
             KNOWN_MODELS_METADATA,
             MODEL_SEARCH_DIRS,
@@ -141,6 +144,8 @@ class ModelManager:
                 for ext in SUPPORTED_MODEL_EXTENSIONS:
                     for file_path in sorted(search_dir.glob(f"*{ext}")):
                         model_id = file_path.name
+                        if model_id not in FRESH_TRAINED_MODEL_ALLOWLIST:
+                            continue
                         if model_id in discovered:
                             continue  # Higher priority directory already registered this filename
 
@@ -152,6 +157,8 @@ class ModelManager:
             for file_path in ADDITIONAL_MODEL_FILES:
                 if file_path.exists() and file_path.is_file():
                     model_id = file_path.name
+                    if model_id not in FRESH_TRAINED_MODEL_ALLOWLIST:
+                        continue
                     if model_id not in discovered and file_path.suffix.lower() in SUPPORTED_MODEL_EXTENSIONS:
                         meta = self._build_model_metadata(model_id, file_path)
                         if meta is not None:
@@ -398,6 +405,9 @@ class ModelManager:
         iou: float = DEFAULT_IOU_THRESHOLD,
         draw: bool = True,
         draw_fps: bool = False,
+        imgsz: Optional[int] = None,
+        tracker: Any = None,
+        timestamp: Optional[float] = None,
     ) -> DetectionResult:
         """
         Run object detection on an input BGR image frame using the active model.
@@ -414,6 +424,9 @@ class ModelManager:
             iou=iou,
             draw=draw,
             draw_fps=draw_fps,
+            imgsz=imgsz,
+            tracker=tracker,
+            timestamp=timestamp,
         )
 
     # --------------------------------------------------------------------------

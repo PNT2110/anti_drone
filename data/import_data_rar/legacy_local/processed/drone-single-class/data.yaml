@@ -1,0 +1,6 @@
+path: /run/media/pnt/APP/anti_drone/data/processed/drone-single-class
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: drone

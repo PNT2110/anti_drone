@@ -1,2 +1,0 @@
-"""Anti-drone detection project."""
-

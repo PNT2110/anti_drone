@@ -1,150 +1,124 @@
 # anti_drone
 
-Dự án phát hiện drone từ camera USB, train trên máy có GPU CUDA và chạy suy luận CPU trên Raspberry Pi 5 4GB. Mục tiêu là một pipeline anti-drone có thể kiểm thử, benchmark và tái triển khai được; dự án không điều khiển cơ cấu chấp hành, không dẫn đường và không có chức năng vũ khí.
+Hệ thống thử nghiệm phát hiện và tracking drone một lớp bằng YOLO, kèm bảng điều khiển web (FastAPI) để phân tích video và camera. Repository này chỉ xử lý nhận diện, tracking và cảnh báo phần mềm; không điều khiển cơ cấu chấp hành hay vũ khí.
 
-## Dự án làm gì?
-
-Pipeline nhận frame từ camera USB, chạy detector một class `0 = drone`, lọc NMS, theo dõi đối tượng qua nhiều frame bằng ByteTrackLite và phát alert khi trạng thái đủ ổn định. Pi chỉ làm capture, preprocessing, inference, tracking, overlay và ghi log. Toàn bộ dataset preparation, training, evaluation và export model được thực hiện trên máy GPU; không train hoặc export trên Pi.
-
-Các runtime deploy được hỗ trợ:
-
-- ONNX Runtime.
-- NCNN.
-- TFLite/LiteRT.
-
-Phiên bản v1 không dùng Hailo, AI HAT, TensorRT hoặc accelerator riêng.
-
-## Kiến trúc
-
-```text
-USB camera
-    -> latest-frame capture queue
-    -> letterbox 640x640
-    -> detector runtime (ONNX / NCNN / TFLite)
-    -> NMS
-    -> ByteTrackLite
-    -> multi-frame alert state
-    -> overlay + terminal log
-```
-
-Model được chọn là `yolov8n` vì đạt trade-off tốt nhất giữa validation quality và khả năng chạy CPU trên Pi 5. Checkpoint train nằm tại `artifacts/experiments/drone-single-class/yolov8n/`.
-
-## Dataset policy
-
-Dataset gốc được giữ trong `data/import_data_rar/`; các archive tải chưa xong không được đưa vào training. Dataset đã xử lý phải có:
-
-- Ba split không trùng ảnh: `train`, `val`, `test`.
-- Tỷ lệ mục tiêu `70% / 20% / 10%`.
-- `my_dataset` bắt buộc nằm trong `train`.
-- Split theo video/sequence để tránh leakage giữa các split.
-- Class duy nhất: `0 = drone`.
-- Manifest, checksum, label statistics và audit report.
-
-Dataset runtime sau audit nằm tại `data/processed/drone-single-class/` và manifest được kiểm tra bất biến trước khi release model.
-
-## Kết quả Pi 5 đã đo
-
-Đo trên Raspberry Pi 5 4GB, CPU, input 640, sau 200 frame warm-up và 1000 frame benchmark:
-
-| Runtime | Model-only | End-to-end | End-to-end p95 | RAM peak | Nhiệt độ tối đa |
-|---|---:|---:|---:|---:|---:|
-| ONNX Runtime | 7.10 FPS | 6.77 FPS | 154.81 ms | xem report | 53.45°C |
-| NCNN | 14.20 FPS | 12.85 FPS | 81.13 ms | 211.6 MB | 47.40°C |
-| TFLite/LiteRT | 7.76 FPS | 7.35 FPS | 138.79 ms | 296.2 MB | 52.35°C |
-
-NCNN là profile nhanh nhất trong phép đo hiện tại. Mỗi runtime cũng đã chạy camera live đủ 1800 giây không có capture error.
-
-Chi tiết evidence:
-
-- [Pi execution status](docs/PI5_EXECUTION_STATUS.md)
-- [Release candidate](artifacts/releases/yolov8n/RELEASE_CANDIDATE.md)
-- [Independent verification](artifacts/releases/yolov8n/VERIFICATION.json)
-- [Pi benchmark artifacts](artifacts/benchmarks/pi5-cpu/)
-
-## Chạy trên Pi
-
-Bundle release: `artifacts/releases/yolov8n/anti-drone-yolov8n-pi5.tar.gz`.
-
-Camera live sau khi cài bundle:
-
-```bash
-cd /path/to/anti-drone
-. .venv-pi/bin/activate
-PYTHONPATH=src python scripts/run_phase5.py camera \
-  --runtime ncnn \
-  --model artifacts/deploy/yolov8n/ncnn/best_ncnn_model \
-  --device /dev/video0 \
-  --imgsz 640 \
-  --output .runtime/pi-camera/ncnn
-```
-
-Xem log live:
-
-```bash
-tail -f .runtime/pi-camera/ncnn/runtime.log
-```
-
-## Xem màn hình vật lý bằng Remmina
-
-Pi hiện dùng RealVNC service mode. Trong Remmina chọn:
-
-```text
-Protocol: VNC
-Server: 192.168.1.118:5900
-Username: để trống
-```
-
-Port `3389` là XRDP session riêng, không phải màn hình vật lý.
-
-## Train và đánh giá trên GPU
-
-Các lệnh train chỉ chạy trên máy GPU:
-
-```bash
-conda env create -f environment.yml
-conda activate anti-drone
-pip install -r requirements-dev.txt
-python scripts/train_gpu.py --dataset drone-single-class --model yolov8n
-```
-
-Các phase training, evaluation và model selection đều ghi provenance, seed, Git state, package versions, checkpoint `best.pt`/`last.pt` và validation metrics. Test split chỉ được mở sau khi khóa candidate và threshold.
-
-## Runbook theo phase
-
-Đọc [docs/phases/README.md](docs/phases/README.md) rồi thực hiện tuần tự:
-
-1. [Repository baseline](docs/phases/PHASE_00_REPOSITORY_BASELINE.md)
-2. [Dataset ingestion and audit](docs/phases/PHASE_01_DATASET_INGESTION_AND_AUDIT.md)
-3. [GPU training](docs/phases/PHASE_02_GPU_TRAINING.md)
-4. [Evaluation and model selection](docs/phases/PHASE_03_EVALUATION_AND_MODEL_SELECTION.md)
-5. [Export and runtime parity](docs/phases/PHASE_04_EXPORT_AND_RUNTIME_PARITY.md)
-6. [Pi 5 camera pipeline](docs/phases/PHASE_05_PI5_USB_CAMERA_PIPELINE.md)
-7. [Benchmark and release](docs/phases/PHASE_06_BENCHMARK_AND_RELEASE.md)
-8. [Retraining and maintenance](docs/phases/PHASE_07_RETRAINING_AND_MAINTENANCE.md)
-
-Tài liệu giải thích tổng quan:
-
-- [Datasets](docs/DATASETS.md)
-- [Training](docs/TRAINING.md)
-- [Repository layout](docs/REPOSITORY_LAYOUT.md)
-- [Research plan](docs/RESEARCH_PLAN.md)
-- [Pi handoff](docs/PI5_HANDOFF.md)
-
-## Cấu trúc repository
+## Cấu trúc
 
 ```text
 anti_drone/
-├── configs/                 # dataset và model config
-├── data/                    # dataset local; không commit archive lớn
-├── artifacts/               # checkpoint, export, benchmark, release evidence
-├── .runtime/                # manifest và kết quả chạy local/Pi
-├── docs/                    # tài liệu tổng quan và phase runbook
-├── scripts/                 # prepare, train, evaluate, export, benchmark
-├── src/anti_drone/          # runtime detector/tracker/alert pipeline
-├── tests/                   # runtime tests và contract tests
-├── requirements.txt         # dependency máy GPU/host
-├── requirements-pi.txt      # dependency inference trên Pi
-└── README.md
+├── web/                     # Bảng điều khiển web
+│   ├── app.py               # FastAPI: REST, MJPEG, WebSocket
+│   ├── security.py          # Xác thực bằng mật khẩu (tuỳ chọn)
+│   ├── backend/             # config, detector, model_manager, tracker
+│   ├── models/              # Checkpoint mà web được phép nạp
+│   ├── static/, templates/  # Giao diện
+│   ├── tests/               # pytest
+│   ├── start.bat, stop.bat  # Chạy/dừng server + tunnel trên Windows
+│   └── requirements*.txt
+├── scripts/                 # Train ma trận model, hậu xử lý, đánh giá
+├── configs/                 # Cấu hình dataset, model, tracker, training
+├── models/                  # Model export (ONNX/NCNN) lưu tham chiếu
+├── artifacts/               # Bundle triển khai, release, kết quả train
+├── data/                    # Dataset — chỉ nằm trên đĩa, KHÔNG nằm trong git
+└── docs/                    # description/, plan/, report/
 ```
 
-Dataset, checkpoint và benchmark là local artifacts; `.gitignore` ngăn chúng được commit nhầm. Không xóa dataset gốc hoặc evidence release nếu chưa có bản sao lưu và chưa tạo version dataset thay thế.
+`data/` không được theo dõi bằng git (xem `.gitignore`); chỉ các file `data.yaml` mô tả dataset được giữ lại. Không tự ý đổi tên, di chuyển hay xoá nội dung thư mục này.
+
+## Cài đặt
+
+Yêu cầu Python 3.12.
+
+```bash
+python -m venv .venv
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+# Linux/macOS
+source .venv/bin/activate
+pip install -r web/requirements.txt
+```
+
+Máy có GPU nên cài PyTorch đúng phiên bản CUDA trước khi cài `web/requirements.txt`.
+
+## Chạy web
+
+```bash
+cd web
+python app.py
+```
+
+Mặc định server chỉ nghe ở `http://127.0.0.1:8000` và không cần mật khẩu.
+
+### Mở cho máy khác hoặc internet
+
+Server từ chối khởi động trên địa chỉ không phải loopback nếu chưa đặt mật khẩu.
+
+```bat
+set ANTI_DRONE_PASSWORD=mat-khau-cua-ban
+web\start.bat
+```
+
+`start.bat` chạy server rồi mở tunnel `cloudflared`. Trình duyệt sẽ hỏi đăng nhập: tên bất kỳ, mật khẩu là `ANTI_DRONE_PASSWORD`. `stop.bat` chỉ dừng đúng tiến trình server đã ghi trong `web/server.pid`.
+
+### Biến môi trường
+
+| Biến | Mặc định | Ý nghĩa |
+|---|---|---|
+| `ANTI_DRONE_PASSWORD` | (trống) | Bật xác thực HTTP Basic cho mọi trang, API và WebSocket |
+| `ANTI_DRONE_HOST` / `ANTI_DRONE_PORT` | `127.0.0.1` / `8000` | Địa chỉ nghe |
+| `ANTI_DRONE_MAX_VIDEO_TASKS` | `2` | Số video xử lý đồng thời |
+| `ANTI_DRONE_VIDEO_TTL_SECONDS` | `3600` | Thời gian giữ video tạm trong `web/tmp/` |
+| `ANTI_DRONE_DEVICE` | `auto` | `cpu`, `cuda:0`… |
+| `ANTI_DRONE_VIDEO_MIN_CONFIDENCE` | `0.10` | Ngưỡng detector khi phân tích video |
+| `ANTI_DRONE_ACTIVE_TRACK_TTL` | `4.0` | Số giây giữ track khi mất dấu |
+| `ANTI_DRONE_REID_MEMORY_SECONDS` | `60.0` | Thời gian nhớ để nhận lại ID |
+| `ANTI_DRONE_REID_MATCH_THRESHOLD` | `0.45` | Ngưỡng khoảng cách ngoại hình khi nhận lại ID |
+| `ANTI_DRONE_NEW_TRACK_MIN_CONFIDENCE` | `0.25` | Confidence tối thiểu để tạo ID mới |
+| `ANTI_DRONE_CAMERA_INDEX` | `0` | Camera USB của server cho `/ws/camera` |
+
+Giới hạn upload là 500 MB, định dạng `.mp4 .avi .mkv .mov` (`web/backend/config.py`).
+
+## Training và đánh giá
+
+Các script train mặc định dùng đường dẫn trên server training; ghi đè bằng biến môi trường khi chạy ở máy khác.
+
+```bash
+# Train ma trận 3 model x 2 kích thước ảnh
+FPV_DATA=data/data_train FPV_RUN_ROOT=artifacts/runs python scripts/train_matrix_fresh.py
+
+# Đánh giá trên tập test, chọn model, export ONNX/NCNN/TFLite
+python scripts/postprocess_fresh_matrix.py
+
+# So sánh cấu hình tracker trên một video
+python scripts/evaluate_tracker_grid.py <video.mp4> web/models/drone-yolov8n-fresh-480.pt
+
+# Lấy mẫu phát hiện của mọi checkpoint trên hai clip kiểm tra
+python scripts/evaluate_fresh_models_on_videos.py --models-dir web/models \
+  --indoor <indoor.mp4> --outdoor <outdoor.mp4> --output result.json
+
+# Thống kê dataset và artifacts
+python scripts/audit_workspace.py
+```
+
+## Kiểm thử
+
+```bash
+pip install -r web/requirements-test.txt
+python -m pytest web/tests/test_tracker_long_term_reid.py web/tests/test_app_api.py -q
+```
+
+Hai bộ test này không cần `ultralytics` hay GPU và là bộ chạy trên CI. `web/tests/test_model_engine.py` nạp model thật nên cần cài đầy đủ `web/requirements.txt`.
+
+## Tài liệu
+
+- [Tổng quan tài liệu](docs/README.md)
+- [Mô tả repository](docs/description/README.md), [dataset](docs/description/DATASETS.md), [training](docs/description/TRAINING.md)
+- [Kế hoạch](docs/plan/README.md) và [báo cáo](docs/report/README.md)
+
+Một số tài liệu trong `docs/` mô tả các script của giai đoạn trước (`train_gpu.py`, `run_phase5.py`…) hiện không còn trong nhánh này.
+
+## Quy tắc cập nhật
+
+1. Không commit dataset, cache, log, video tạm hay checkpoint thử nghiệm; `.gitignore` đã chặn các loại này.
+2. Thay đổi hành vi web phải kèm test trong `web/tests/` và chạy được trên CI.
+3. Khi thêm biến môi trường hoặc script mới, cập nhật README trong cùng thay đổi.

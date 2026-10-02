@@ -1,0 +1,33 @@
+# Fresh training matrix. The runner is scripts/train_matrix_fresh.py.
+# Paths are overridden on the server with FPV_DATA and FPV_RUN_ROOT.
+dataset: data/data_train/data.yaml
+models:
+  - yolov8n.pt
+  - yolo11n.pt
+  - yolo26n.pt
+image_sizes: [480, 640]
+epochs: 30
+batch: 8
+workers: 4
+device: 0
+seed: 42
+deterministic: true
+amp: true
+cache: false
+patience: 8
+weight_decay: 0.0005
+label_smoothing: 0.05
+augmentation:
+  mosaic: 1.0
+  mixup: 0.10
+  degrees: 5.0
+  translate: 0.10
+  scale: 0.50
+  fliplr: 0.50
+  hsv_h: 0.015
+  hsv_s: 0.70
+  hsv_v: 0.40
+  close_mosaic: 10
+learning_rate:
+  scheduler: cosine
+selection: best.pt_by_validation_fitness

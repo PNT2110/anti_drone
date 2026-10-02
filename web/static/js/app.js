@@ -1,245 +1,139 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // UI Elements
-    const modelSelect = document.getElementById('model-select');
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    const tabContents = document.querySelectorAll('.tab-content');
-    
-    // Stats Elements
-    const statTime = document.getElementById('stat-time');
-    const statFps = document.getElementById('stat-fps');
-    const statCount = document.getElementById('stat-count');
-    const statConf = document.getElementById('stat-conf');
-    
-    // Video Upload Elements
-    const uploadZone = document.getElementById('upload-zone');
-    const videoInput = document.getElementById('video-input');
-    const videoResultContainer = document.getElementById('video-result-container');
-    const videoStream = document.getElementById('video-stream');
-    const downloadBtn = document.getElementById('download-btn');
-    let currentTaskId = null;
-    let statsInterval = null;
-    
-    // Webcam Elements
-    const webcamVideo = document.getElementById('webcam-video');
-    const webcamCanvas = document.getElementById('webcam-canvas');
-    const ctx = webcamCanvas.getContext('2d');
-    const startWebcamBtn = document.getElementById('start-webcam');
-    const stopWebcamBtn = document.getElementById('stop-webcam');
-    let ws = null;
-    let isWebcamRunning = false;
-    let stream = null;
-    let lastFrameTime = performance.now();
-    let frameCount = 0;
+    const $ = (id) => document.getElementById(id);
+    const modelSelect = $('model-select'), activeModelName = $('active-model-name'), modelState = $('model-state');
+    const systemStatus = $('system-status-text'), tabBtns = document.querySelectorAll('.tab-btn'), tabContents = document.querySelectorAll('.tab-content');
+    const uploadZone = $('upload-zone'), videoInput = $('video-input'), videoResultContainer = $('video-result-container');
+    const videoStream = $('video-stream'), downloadBtn = $('download-btn'), resetBtn = $('reset-btn');
+    const progressBar = $('progress-bar'), progressText = $('progress-text'), progressPercent = $('progress-percent'), processingBadge = $('processing-badge');
+    const webcamVideo = $('webcam-video'), webcamCanvas = $('webcam-canvas'), webcamPlaceholder = $('webcam-placeholder');
+    const ctx = webcamCanvas.getContext('2d'), startWebcamBtn = $('start-webcam'), stopWebcamBtn = $('stop-webcam');
+    const captureCanvas = document.createElement('canvas'), captureCtx = captureCanvas.getContext('2d');
+    let currentTaskId = null, statsInterval = null, activeModel = null, ws = null, stream = null, isWebcamRunning = false, lastFrameTime = performance.now();
 
-    // Load Models
-    fetch('/api/models')
-        .then(res => res.json())
-        .then(data => {
-            modelSelect.innerHTML = '';
-            data.models.forEach(model => {
-                const option = document.createElement('option');
-                option.value = model.name;
-                option.textContent = model.display_name || model.name;
-                modelSelect.appendChild(option);
-            });
-        })
-        .catch(err => console.error('Error loading models:', err));
-
-    // Handle Model Switch
-    modelSelect.addEventListener('change', (e) => {
-        const formData = new FormData();
-        formData.append('model_name', e.target.value);
-        fetch('/api/models/switch', {
-            method: 'POST',
-            body: formData
-        }).then(res => res.json())
-          .then(data => console.log('Model switched:', data));
-    });
-
-    // Tab Switching
-    tabBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            tabBtns.forEach(b => b.classList.remove('active'));
-            tabContents.forEach(c => c.classList.remove('active'));
-            
-            btn.classList.add('active');
-            document.getElementById(btn.dataset.tab).classList.add('active');
-            
-            if (btn.dataset.tab === 'video-tab' && isWebcamRunning) {
-                stopWebcam();
-            }
-        });
-    });
-
-    // --- Video Upload Logic ---
-    uploadZone.addEventListener('click', () => videoInput.click());
-    
-    uploadZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        uploadZone.classList.add('dragover');
-    });
-    
-    uploadZone.addEventListener('dragleave', () => {
-        uploadZone.classList.remove('dragover');
-    });
-    
-    uploadZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        uploadZone.classList.remove('dragover');
-        if (e.dataTransfer.files.length) {
-            handleVideoUpload(e.dataTransfer.files[0]);
+    function setStatus(text, state = 'ready') { systemStatus.textContent = text; document.body.dataset.state = state; if (state === 'processing') modelState.textContent = 'PROCESSING'; }
+    function notify(message, type = 'info') {
+        const old = document.querySelector('.toast'); if (old) old.remove();
+        const toast = document.createElement('div'); toast.className = 'toast toast-' + type;
+        const icon = document.createElement('i'); icon.className = 'fa-solid ' + (type === 'error' ? 'fa-circle-exclamation' : 'fa-circle-info');
+        const text = document.createElement('span'); text.textContent = message; toast.append(icon, text);
+        document.body.appendChild(toast); setTimeout(() => toast.remove(), 4200);
+    }
+    async function errorMessage(response, fallback) {
+        try { const data = await response.json(); return data.message || data.error || fallback; } catch (error) { return fallback; }
+    }
+    function updateStatsDisplay(stats = {}) {
+        if (stats.inference_time_ms !== undefined) $('stat-time').textContent = Number(stats.inference_time_ms).toFixed(1) + ' ms';
+        if (stats.fps !== undefined) $('stat-fps').textContent = Number(stats.fps).toFixed(1);
+        if (stats.total_detections !== undefined) $('stat-count').textContent = stats.total_detections;
+        if (stats.avg_confidence !== undefined) $('stat-conf').textContent = (Number(stats.avg_confidence) * 100).toFixed(1) + '%';
+        if ($('track-ids')) {
+            const ids = (stats.track_ids || []).map((id) => `ID ${id}`);
+            $('track-ids').textContent = ids.length ? ids.join(' · ') : '—';
         }
+    }
+    async function loadModels() {
+        try {
+            const response = await fetch('/api/models'); if (!response.ok) throw new Error('Không thể tải danh sách mô hình');
+            const data = await response.json(); modelSelect.innerHTML = '';
+            (data.models || []).forEach((model) => { const option = document.createElement('option'); option.value = model.name; option.textContent = model.display_name || model.name; option.selected = model.name === data.active; modelSelect.appendChild(option); });
+            const active = data.active || (data.models && data.models[0] && data.models[0].name) || 'Chưa chọn mô hình'; activeModel = data.active || null; activeModelName.textContent = active; setStatus('Hệ thống sẵn sàng');
+        } catch (error) { activeModelName.textContent = 'Không khả dụng'; setStatus('Không kết nối được backend', 'error'); notify(error.message, 'error'); }
+    }
+    modelSelect.addEventListener('change', async (event) => {
+        const modelName = event.target.value; if (!modelName) return; activeModelName.textContent = modelName; modelState.textContent = 'SWITCHING';
+        try { const body = new FormData(); body.append('model_name', modelName); const response = await fetch('/api/models/switch', { method: 'POST', body }); if (!response.ok) throw new Error(await errorMessage(response, 'Không thể chuyển mô hình')); activeModel = modelName; modelState.textContent = 'READY'; notify('Đã chuyển sang ' + modelName); }
+        catch (error) { modelState.textContent = 'ERROR'; if (activeModel) { modelSelect.value = activeModel; activeModelName.textContent = activeModel; } notify(error.message, 'error'); }
     });
-    
-    videoInput.addEventListener('change', (e) => {
-        if (e.target.files.length) {
-            handleVideoUpload(e.target.files[0]);
-        }
-    });
-
-    function handleVideoUpload(file) {
-        if (!file.type.startsWith('video/')) {
-            alert('Vui lòng chọn file video!');
+    tabBtns.forEach((button) => button.addEventListener('click', () => {
+        tabBtns.forEach((item) => { item.classList.remove('active'); item.setAttribute('aria-selected', 'false'); }); tabContents.forEach((item) => item.classList.remove('active'));
+        button.classList.add('active'); button.setAttribute('aria-selected', 'true'); $(button.dataset.tab).classList.add('active'); if (button.dataset.tab === 'video-tab' && isWebcamRunning) stopWebcam();
+    }));
+    function openFilePicker() { videoInput.click(); }
+    uploadZone.addEventListener('click', openFilePicker);
+    uploadZone.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openFilePicker(); } });
+    uploadZone.addEventListener('dragover', (event) => { event.preventDefault(); uploadZone.classList.add('dragover'); });
+    uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+    uploadZone.addEventListener('drop', (event) => { event.preventDefault(); uploadZone.classList.remove('dragover'); if (event.dataTransfer.files.length) handleVideoUpload(event.dataTransfer.files[0]); });
+    videoInput.addEventListener('change', (event) => { if (event.target.files.length) handleVideoUpload(event.target.files[0]); });
+    async function handleVideoUpload(file) {
+        if (!file.type.startsWith('video/')) { notify('Vui lòng chọn một tệp video hợp lệ.', 'error'); return; }
+        uploadZone.style.display = 'none'; videoResultContainer.style.display = 'flex'; videoStream.src = ''; downloadBtn.disabled = true; progressBar.style.width = '0%'; progressPercent.textContent = '0%';
+        progressText.textContent = 'Đang tải video lên...'; processingBadge.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> ĐANG KHỞI TẠO'; setStatus('Đang tiếp nhận video', 'processing');
+        try { const body = new FormData(); body.append('file', file); const response = await fetch('/api/video/upload', { method: 'POST', body }); if (!response.ok) throw new Error(await errorMessage(response, 'Upload video thất bại')); const data = await response.json(); currentTaskId = data.task_id; videoStream.src = '/api/video/stream/' + currentTaskId; if (statsInterval) clearInterval(statsInterval); statsInterval = setInterval(updateVideoStats, 700); notify('Đã nhận ' + file.name); updateVideoStats(); }
+        catch (error) { notify(error.message, 'error'); resetVideo(); }
+    }
+    async function updateVideoStats() {
+        if (!currentTaskId) return;
+        try {
+            const response = await fetch('/api/video/stats/' + currentTaskId);
+            if (!response.ok) { if (statsInterval) clearInterval(statsInterval); processingBadge.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> LỖI'; setStatus('Không tìm thấy tác vụ video', 'error'); return; }
+            const stats = await response.json();
+            const percent = Math.max(0, Math.min(100, Number(stats.progress || (stats.total_frames ? stats.processed_frames / stats.total_frames * 100 : 0))));
+            progressBar.style.width = percent + '%'; progressPercent.textContent = percent.toFixed(0) + '%';
+            progressText.textContent = stats.status === 'completed' ? 'Phân tích hoàn tất' : stats.status === 'error' ? 'Phân tích gặp lỗi' : 'Đang xử lý · ' + (stats.processed_frames || 0) + ' / ' + (stats.total_frames || '—') + ' frames';
+            updateStatsDisplay(stats);
+            if (stats.status === 'completed') { downloadBtn.disabled = false; processingBadge.innerHTML = '<i class="fa-solid fa-circle-check"></i> HOÀN TẤT'; setStatus('Phân tích hoàn tất'); if (statsInterval) clearInterval(statsInterval); }
+            if (stats.status === 'error') { processingBadge.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> LỖI'; setStatus('Phân tích thất bại', 'error'); if (statsInterval) clearInterval(statsInterval); if (stats.message) notify(stats.message, 'error'); }
+        } catch (error) { console.warn('Stats error:', error); }
+    }
+    downloadBtn.addEventListener('click', () => { if (currentTaskId) window.location.href = '/api/video/download/' + currentTaskId; });
+    resetBtn.addEventListener('click', resetVideo);
+    function resetVideo() { if (statsInterval) clearInterval(statsInterval); currentTaskId = null; videoInput.value = ''; videoStream.src = ''; videoResultContainer.style.display = 'none'; uploadZone.style.display = 'flex'; progressBar.style.width = '0%'; progressPercent.textContent = '0%'; progressText.textContent = 'Đang khởi tạo...'; setStatus('Hệ thống sẵn sàng'); updateStatsDisplay({ fps: 0, inference_time_ms: 0, total_detections: 0, avg_confidence: 0 }); }
+    startWebcamBtn.addEventListener('click', startWebcam); stopWebcamBtn.addEventListener('click', stopWebcam);
+    async function startWebcam() {
+        if (!window.isSecureContext && !['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+            notify('Chrome chỉ cho camera trên HTTPS hoặc localhost. Mở link HTTPS của tunnel để dùng camera máy bạn.', 'error');
             return;
         }
-        
-        uploadZone.style.display = 'none';
-        videoResultContainer.style.display = 'flex';
-        videoStream.src = '';
-        downloadBtn.disabled = true;
-        
-        const formData = new FormData();
-        formData.append('file', file);
-        
-        fetch('/api/video/upload', {
-            method: 'POST',
-            body: formData
-        })
-        .then(res => res.json())
-        .then(data => {
-            currentTaskId = data.task_id;
-            videoStream.src = `/api/video/stream/${currentTaskId}`;
-            
-            if (statsInterval) clearInterval(statsInterval);
-            statsInterval = setInterval(updateVideoStats, 1000);
-            
-            // Assume completion after stream ends or polling indicates completion
-            // Simplified: enable download button after some time or check status
-            setTimeout(() => {
-                downloadBtn.disabled = false;
-            }, 5000); // For demo, ideally poll status endpoint
-        });
-    }
-    
-    function updateVideoStats() {
-        if (!currentTaskId) return;
-        fetch(`/api/video/stats/${currentTaskId}`)
-            .then(res => res.json())
-            .then(stats => {
-                if(stats.inference_time_ms !== undefined) updateStatsDisplay(stats);
-            });
-    }
-
-    downloadBtn.addEventListener('click', () => {
-        if (currentTaskId) {
-            window.location.href = `/api/video/download/${currentTaskId}`;
-        }
-    });
-
-    // --- Webcam Logic ---
-    startWebcamBtn.addEventListener('click', startWebcam);
-    stopWebcamBtn.addEventListener('click', stopWebcam);
-
-    async function startWebcam() {
         try {
-            stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+            stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } }, audio: false });
             webcamVideo.srcObject = stream;
-            
             webcamVideo.onloadedmetadata = () => {
-                webcamCanvas.width = webcamVideo.videoWidth;
-                webcamCanvas.height = webcamVideo.videoHeight;
+                webcamCanvas.width = webcamVideo.videoWidth || 1280;
+                webcamCanvas.height = webcamVideo.videoHeight || 720;
+                const scale = Math.min(1, 640 / webcamCanvas.width);
+                captureCanvas.width = Math.max(1, Math.round(webcamCanvas.width * scale));
+                captureCanvas.height = Math.max(1, Math.round(webcamCanvas.height * scale));
+                webcamPlaceholder.style.display = 'none';
                 isWebcamRunning = true;
                 startWebcamBtn.disabled = true;
                 stopWebcamBtn.disabled = false;
-                
+                setStatus('Camera máy bạn đang hoạt động', 'processing');
                 connectWebSocket();
             };
-        } catch (err) {
-            console.error('Error accessing webcam:', err);
-            alert('Không thể truy cập camera!');
+        } catch (error) {
+            notify('Không thể truy cập camera máy bạn. Hãy bấm Allow quyền Camera cho link HTTPS.', 'error');
         }
     }
-
-    function stopWebcam() {
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-        }
-        isWebcamRunning = false;
-        if (ws) {
-            ws.close();
-        }
-        startWebcamBtn.disabled = false;
-        stopWebcamBtn.disabled = true;
-    }
-
+    function stopWebcam() { if (stream) stream.getTracks().forEach((track) => track.stop()); stream = null; isWebcamRunning = false; if (ws) ws.close(); ws = null; webcamVideo.srcObject = null; webcamPlaceholder.style.display = 'flex'; startWebcamBtn.disabled = false; stopWebcamBtn.disabled = true; setStatus('Hệ thống sẵn sàng'); updateStatsDisplay({ fps: 0, inference_time_ms: 0, total_detections: 0, avg_confidence: 0, track_ids: [] }); }
     function connectWebSocket() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        ws = new WebSocket(`${protocol}//${window.location.host}/ws/webcam`);
-        
-        ws.onopen = () => {
-            sendFrame();
-        };
-        
+        ws = new WebSocket(protocol + '//' + window.location.host + '/ws/webcam');
+        ws.onopen = () => sendFrame();
         ws.onmessage = (event) => {
             if (!isWebcamRunning) return;
             const data = JSON.parse(event.data);
-            
-            // Draw image on canvas
-            const img = new Image();
-            img.onload = () => {
-                ctx.drawImage(img, 0, 0, webcamCanvas.width, webcamCanvas.height);
-                
-                // Calculate FPS
+            if (data.error) { notify(data.error, 'error'); stopWebcam(); return; }
+            const image = new Image();
+            image.onload = () => {
+                if (!webcamCanvas.width || !webcamCanvas.height) { webcamCanvas.width = image.naturalWidth; webcamCanvas.height = image.naturalHeight; }
+                ctx.drawImage(image, 0, 0, webcamCanvas.width, webcamCanvas.height);
                 const now = performance.now();
-                const delta = now - lastFrameTime;
+                data.stats.fps = 1000 / Math.max(now - lastFrameTime, 1);
                 lastFrameTime = now;
-                const currentFps = 1000 / delta;
-                
-                // Update stats
-                data.stats.fps = currentFps;
                 updateStatsDisplay(data.stats);
-                
-                // Request next frame
+                setStatus('Camera máy bạn đang hoạt động', 'processing');
                 requestAnimationFrame(sendFrame);
             };
-            img.src = data.image;
+            image.src = data.image;
         };
-        
-        ws.onclose = () => {
-            if (isWebcamRunning) {
-                setTimeout(connectWebSocket, 1000); // Reconnect
-            }
-        };
+        ws.onerror = () => notify('Không kết nối được camera server.', 'error');
+        ws.onclose = () => { if (isWebcamRunning) setTimeout(connectWebSocket, 1000); };
     }
-
     function sendFrame() {
-        if (!isWebcamRunning || ws.readyState !== WebSocket.OPEN) return;
-        
-        // Draw video frame to canvas
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = webcamVideo.videoWidth;
-        tempCanvas.height = webcamVideo.videoHeight;
-        tempCanvas.getContext('2d').drawImage(webcamVideo, 0, 0);
-        
-        // Get base64 jpeg
-        const dataURL = tempCanvas.toDataURL('image/jpeg', 0.8);
-        ws.send(dataURL);
+        if (!isWebcamRunning || !ws || ws.readyState !== WebSocket.OPEN) return;
+        captureCtx.drawImage(webcamVideo, 0, 0, captureCanvas.width, captureCanvas.height);
+        ws.send(captureCanvas.toDataURL('image/jpeg', 0.72));
     }
-
-    function updateStatsDisplay(stats) {
-        if(stats.inference_time_ms !== undefined) statTime.textContent = stats.inference_time_ms.toFixed(1) + ' ms';
-        if(stats.fps !== undefined) statFps.textContent = stats.fps.toFixed(1);
-        if(stats.total_detections !== undefined) statCount.textContent = stats.total_detections;
-        if(stats.avg_confidence !== undefined) statConf.textContent = (stats.avg_confidence * 100).toFixed(1) + '%';
-    }
+    loadModels();
 });

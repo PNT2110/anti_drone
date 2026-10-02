@@ -1,0 +1,56 @@
+{
+  "status": "DONE",
+  "profiles": {
+    "onnx": {
+      "model": "/run/media/pnt/APP/anti_drone/artifacts/deploy-320/yolov8n/onnx/best.onnx",
+      "status": "DONE",
+      "started_at": 1789994042.5523896,
+      "reference_detections": 0,
+      "candidate_detections": 0,
+      "class_exact": true,
+      "paired_detections": 0,
+      "max_abs_confidence": 0.0,
+      "max_abs_box_pixels": 0.0,
+      "elapsed_seconds": 0.1896069049835205
+    },
+    "ncnn": {
+      "model": "/run/media/pnt/APP/anti_drone/artifacts/deploy-320/yolov8n/ncnn/best_ncnn_model",
+      "status": "DONE",
+      "started_at": 1789994042.7419984,
+      "reference_detections": 0,
+      "candidate_detections": 0,
+      "class_exact": true,
+      "paired_detections": 0,
+      "max_abs_confidence": 0.0,
+      "max_abs_box_pixels": 0.0,
+      "elapsed_seconds": 0.11222386360168457
+    },
+    "tflite": {
+      "model": "/run/media/pnt/APP/anti_drone/artifacts/deploy-320/yolov8n/tflite/model_float32.tflite",
+      "status": "DONE",
+      "started_at": 1789994042.8542237,
+      "reference_detections": 0,
+      "candidate_detections": 0,
+      "class_exact": true,
+      "paired_detections": 0,
+      "max_abs_confidence": 0.0,
+      "max_abs_box_pixels": 0.0,
+      "elapsed_seconds": 0.1356191635131836
+    }
+  },
+  "tolerance": {
+    "max_abs_confidence": 0.05,
+    "max_abs_box_pixels": 5.0,
+    "class_exact": true
+  },
+  "images": [
+    ".runtime/parity-set/base__000000__RGBT_val_20190925_130434_1_6_visible_345.jpg",
+    ".runtime/parity-set/base__000001__RGBT_test_20190925_134301_1_1_infrared_755.jpg",
+    ".runtime/parity-set/base__000002__RGBT_val_20190925_101846_1_4_infrared_780.jpg",
+    ".runtime/parity-set/base__000003__RGBT_test_20190926_134054_1_2_infrared_480.jpg",
+    ".runtime/parity-set/base__000004__RGBT_test_20190925_111757_1_2_infrared_505.jpg",
+    ".runtime/parity-set/base__000005__DUT_train_03458.jpg",
+    ".runtime/parity-set/base__000006__RGBT_train_20190926_195921_1_7_visible_105.jpg",
+    ".runtime/parity-set/base__000007__RGBT_train_20190925_152412_1_4_infrared_825.jpg"
+  ]
+}
