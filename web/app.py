@@ -290,7 +290,8 @@ def process_video_task(task_id: str, input_path: str, output_path: str):
                   # FPV drones occupy very few pixels in these source videos; 960
                   # improves small-object recall and gives the tracker more
                   # continuous observations while remaining real-time on the server.
-                  imgsz=960,
+                  # CPU-only hosts can lower it with ANTI_DRONE_VIDEO_IMGSZ.
+                  imgsz=int(os.getenv("ANTI_DRONE_VIDEO_IMGSZ", "960")),
                 tracker=stream_tracker,
                 timestamp=frame_idx / max(float(fps), 1.0),
             )

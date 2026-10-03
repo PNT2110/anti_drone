@@ -22,3 +22,6 @@ artifacts/video_tests/
 artifacts/**/*.tar.gz
 artifacts/**/*.tgz
 artifacts/models/**/*.pt
+
+# Build output
+dist/

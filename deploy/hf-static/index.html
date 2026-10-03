@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkyWatch · Phát hiện drone</title>
+    <style>
+        html, body { margin: 0; height: 100%; background: #07111f; color: #dbe7f5; font-family: system-ui, sans-serif; }
+        iframe { border: 0; width: 100%; height: 100%; display: none; }
+        .notice { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 0 24px; }
+        .notice h1 { font-size: 20px; margin: 0; }
+        .notice p { margin: 0; opacity: .75; max-width: 520px; line-height: 1.5; }
+        .notice a { color: #6cc4ff; }
+    </style>
+</head>
+<body>
+    <div class="notice" id="notice">
+        <h1 id="notice-title">Đang kết nối máy chủ SkyWatch…</h1>
+        <p id="notice-text"></p>
+    </div>
+    <iframe id="console" title="SkyWatch" allow="camera; microphone; fullscreen"></iframe>
+    <script>
+        // Filled in by scripts/publish_hf_static.py.
+        const BACKEND_URL = "__BACKEND_URL__";
+        const frame = document.getElementById('console');
+        const notice = document.getElementById('notice');
+
+        function showOffline() {
+            document.getElementById('notice-title').textContent = 'Máy chủ SkyWatch đang ngoại tuyến';
+            const text = document.getElementById('notice-text');
+            text.textContent = 'Mô hình chạy trên máy chủ GPU riêng và hiện không kết nối được. Thử lại sau, hoặc mở trực tiếp: ';
+            const link = document.createElement('a');
+            link.href = BACKEND_URL; link.textContent = BACKEND_URL; link.target = '_blank'; link.rel = 'noopener';
+            text.appendChild(link);
+        }
+
+        // An opaque no-cors response is enough to know the server answers.
+        fetch(BACKEND_URL + '/static/css/style.css', { mode: 'no-cors', cache: 'no-store' })
+            .then(() => { frame.src = BACKEND_URL; frame.style.display = 'block'; notice.style.display = 'none'; })
+            .catch(showOffline);
+    </script>
+</body>
+</html>

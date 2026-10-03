@@ -74,6 +74,9 @@ web\start.bat
 | `ANTI_DRONE_REID_MEMORY_SECONDS` | `60.0` | Thời gian nhớ để nhận lại ID |
 | `ANTI_DRONE_REID_MATCH_THRESHOLD` | `0.45` | Ngưỡng khoảng cách ngoại hình khi nhận lại ID |
 | `ANTI_DRONE_NEW_TRACK_MIN_CONFIDENCE` | `0.25` | Confidence tối thiểu để tạo ID mới |
+| `ANTI_DRONE_TRACK_CONFIRM_HITS` | `3` | Số khung hình liên tiếp một box phải xuất hiện trước khi được cấp ID và được vẽ |
+| `ANTI_DRONE_MOTION_GATE` | `1.5` | Bán kính tìm kiếm quanh vị trí dự đoán của track, tính bằng số đường chéo box |
+| `ANTI_DRONE_MOTION_GATE_GROWTH` | `5.0` | Mức nới bán kính trên mỗi giây track bị mất dấu |
 | `ANTI_DRONE_CAMERA_INDEX` | `0` | Camera USB của server cho `/ws/camera` |
 
 Giới hạn upload là 500 MB, định dạng `.mp4 .avi .mkv .mov` (`web/backend/config.py`).
