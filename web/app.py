@@ -18,6 +18,7 @@ import uvicorn
 from backend.config import (
     DEFAULT_HOST,
     DEFAULT_PORT,
+    DEFAULT_VIDEO_CONF_THRESHOLD,
     MAX_UPLOAD_SIZE_BYTES,
     SUPPORTED_VIDEO_EXTENSIONS,
 )
@@ -285,7 +286,7 @@ def process_video_task(task_id: str, input_path: str, output_path: str):
                   draw=False,
                   # Keep weak detections available to continue a known small FPV
                   # track; the tracker requires >=0.25 confidence to create a new ID.
-                  conf=float(os.getenv("ANTI_DRONE_VIDEO_MIN_CONFIDENCE", "0.10")),
+                  conf=DEFAULT_VIDEO_CONF_THRESHOLD,
                   # FPV drones occupy very few pixels in these source videos; 960
                   # improves small-object recall and gives the tracker more
                   # continuous observations while remaining real-time on the server.

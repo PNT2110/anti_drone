@@ -175,7 +175,7 @@ class YOLODetector:
             self.model.predict(
                 source=dummy_frame,
                 conf=0.25,
-                iou=0.45,
+                iou=0.70,
                 device=self.device,
                 half=self.use_half,
                 verbose=False,
@@ -185,7 +185,7 @@ class YOLODetector:
         self,
         frame: np.ndarray,
         conf: float = 0.25,
-        iou: float = 0.45,
+        iou: float = 0.70,
         draw: bool = True,
         draw_fps: bool = False,
         imgsz: Optional[int] = None,
@@ -395,7 +395,7 @@ class YOLODetector:
                 self.model.predict(
                     source=dummy,
                     conf=0.25,
-                    iou=0.45,
+                    iou=0.70,
                     device=self.device,
                     verbose=False,
                 )

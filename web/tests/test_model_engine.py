@@ -261,7 +261,7 @@ class TestModelEngine(unittest.TestCase):
 
         # Test Frame A: Solid black 480x640 frame
         black_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        result_black = manager.predict(black_frame, conf=0.25, iou=0.45)
+        result_black = manager.predict(black_frame, conf=0.25, iou=0.70)
 
         self.assertIsInstance(
             result_black,
@@ -289,7 +289,7 @@ class TestModelEngine(unittest.TestCase):
         # Test standalone YOLODetector on ONNX model
         model_path = config.PROJECT_ROOT / "models" / "yolov8n-drone-480.onnx"
         detector = YOLODetector(model_path=model_path, warmup=False)
-        det_result = detector.detect(black_frame, conf=0.25, iou=0.45)
+        det_result = detector.detect(black_frame, conf=0.25, iou=0.70)
         self.assertIsInstance(det_result, DetectionResult)
 
     # --------------------------------------------------------------------------
@@ -430,7 +430,7 @@ class TestModelEngine(unittest.TestCase):
         # Sub-test 7A: Concurrent inference across 6 worker threads
         num_tasks = 12
         def run_inference(task_id: int) -> DetectionResult:
-            return manager.predict(test_frame, conf=0.25, iou=0.45)
+            return manager.predict(test_frame, conf=0.25, iou=0.70)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
             futures = [executor.submit(run_inference, i) for i in range(num_tasks)]

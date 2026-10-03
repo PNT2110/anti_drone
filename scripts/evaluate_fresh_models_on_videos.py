@@ -47,7 +47,7 @@ def main() -> int:
                 ok, frame = capture.read()
                 if not ok:
                     continue
-                result = model.predict(frame, imgsz=args.imgsz, conf=0.25, iou=0.45, verbose=False)[0]
+                result = model.predict(frame, imgsz=args.imgsz, conf=0.25, iou=0.70, verbose=False)[0]
                 boxes = []
                 if result.boxes is not None:
                     for box, score in zip(result.boxes.xyxy.cpu().numpy(), result.boxes.conf.cpu().numpy()):

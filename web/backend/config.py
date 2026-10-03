@@ -117,7 +117,12 @@ FALLBACK_MODEL_NAMES: List[str] = [
 ]
 
 DEFAULT_CONF_THRESHOLD: float = 0.25
-DEFAULT_IOU_THRESHOLD: float = 0.45
+# NMS IoU must match the evaluated postprocess contract (scope25: 0.70).
+DEFAULT_IOU_THRESHOLD: float = 0.70
+
+# Detector floor for uploaded videos. Weak boxes only continue existing tracks;
+# new IDs still require ANTI_DRONE_NEW_TRACK_MIN_CONFIDENCE (0.25).
+DEFAULT_VIDEO_CONF_THRESHOLD: float = float(os.getenv("ANTI_DRONE_VIDEO_MIN_CONFIDENCE", "0.10"))
 
 CONF_MIN: float = 0.05
 CONF_MAX: float = 1.00

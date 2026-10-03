@@ -63,7 +63,7 @@ def main() -> int:
         ok, frame = capture.read()
         if not ok:
             break
-        result = model.predict(frame, imgsz=args.imgsz, conf=args.conf, iou=0.45, verbose=False)[0]
+        result = model.predict(frame, imgsz=args.imgsz, conf=args.conf, iou=0.70, verbose=False)[0]
         boxes = result.boxes.xyxy.cpu().numpy().tolist() if result.boxes is not None else []
         scores = result.boxes.conf.cpu().numpy().tolist() if result.boxes is not None else []
         frame_area = float(frame.shape[0] * frame.shape[1])
